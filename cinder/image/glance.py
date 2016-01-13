@@ -312,6 +312,8 @@ class GlanceImageService(object):
                         shutil.copyfileobj(f, data)
                     return
 
+        LOG.info("context: %s, image_id: %s, data: %s" % (context, image_id, data))
+
         try:
             image_chunks = self._client.call(context, 'data', image_id)
         except Exception:

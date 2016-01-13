@@ -32,6 +32,7 @@ from cinder.i18n import _, _LE, _LI, _LW
 from cinder.image import image_utils
 from cinder import utils
 from cinder.volume import driver
+from cinder.volume import lichbd
 
 try:
     import rados
@@ -318,8 +319,9 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
 
     def _disconnect_from_rados(self, client, ioctx):
         # closing an ioctx cannot raise an exception
-        ioctx.close()
-        client.shutdown()
+        LOG.info("close client: %s, ioctx: %s", client, ioctx)
+        #ioctx.close()
+        #client.shutdown()
 
     def _get_backup_snaps(self, rbd_image):
         """Get list of any backup snapshots that exist on this volume.
@@ -335,6 +337,11 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
         return ceph.CephBackupDriver.get_backup_snaps(rbd_image)
 
     def _get_mon_addrs(self):
+        hosts = []
+        ports = []
+        return hosts, ports
+
+        """
         args = ['ceph', 'mon', 'dump', '--format=json']
         args.extend(self._ceph_args())
         out, _ = self._execute(*args)
@@ -351,6 +358,7 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
             hosts.append(host.strip('[]'))
             ports.append(port)
         return hosts, ports
+        """
 
     def _update_volume_stats(self):
         stats = {
@@ -487,7 +495,9 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
 
         LOG.info("%s" % (volume))
         LOG.info("creating volume '%s' size: %d", volume['name'], size)
-        pass
+        path = "lichbd:volume/%s" % (volume["id"])
+        size = "%sG" % (size/1024/1024/1024)
+        lichbd.lichbd_create_raw(path, size)
 
     def _flatten(self, pool, volume_name):
         LOG.debug('flattening %(pool)s/%(img)s',
@@ -509,6 +519,8 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
                                       features=src_client.features)
 
     def _resize(self, volume, **kwargs):
+        LOG.info("_resize volume: %s, kwargs: %s", volume, kwargs)
+        return 
         size = kwargs.get('size', None)
         if not size:
             size = int(volume['size']) * units.Gi
@@ -613,6 +625,8 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
 
         LOG.info("%s" % (volume))
         LOG.info("delete volume '%s' size: %d", volume_name)
+        path = "/lichbd/volume/%s" % (volume["id"])
+        lichbd.lichbd_unlink(path)
 
     def create_snapshot(self, snapshot):
         """Creates an rbd snapshot."""
@@ -698,7 +712,10 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
                 'volume_id': volume['id'],
             }
         }
-        LOG.debug('connection data: %s', data)
+        LOG.info('connection data: %s, volume: %s', data, volume)
+        lichbd.lichbd_mkdir("/lichbd")
+        lichbd.lichbd_mkdir("/lichbd/volume")
+        lichbd.lichbd_mkdir("/lichbd/image")
         return data
 
     def terminate_connection(self, volume, connector, **kwargs):
@@ -756,27 +773,20 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
     def clone_image(self, context, volume,
                     image_location, image_meta,
                     image_service):
-        if image_location:
-            # Note: image_location[0] is glance image direct_url.
-            # image_location[1] contains the list of all locations (including
-            # direct_url) or None if show_multiple_locations is False in
-            # glance configuration.
-            if image_location[1]:
-                url_locations = [location['url'] for
-                                 location in image_location[1]]
-            else:
-                url_locations = [image_location[0]]
+        LOG.info("context: %s, volume: %s, image_location: %s, image_meta: %s, image_service: %s" % (context, volume, image_location, image_meta, image_service))
+        LOG.info("image_id: %s, volume_id: %s" % (image_meta["id"], dir(volume)))
+        LOG.info("image_id: %s, volume_id: %s" % (image_meta["id"], volume["id"]))
 
-            # iterate all locations to look for a cloneable one.
-            for url_location in url_locations:
-                if url_location and self._is_cloneable(
-                        url_location, image_meta):
-                    _prefix, pool, image, snapshot = \
-                        self._parse_location(url_location)
-                    self._clone(volume, pool, image, snapshot)
-                    self._resize(volume)
-                    return {'provider_location': None}, True
-        return ({}, False)
+        image_id = image_meta["id"]
+        volume_id = volume["id"]
+
+        image_path = "/lichbd/image/%s" % (image_id)
+        volume_path = "/lichbd/volume/%s" % (image_id)
+
+        #todo
+        LOG.info("create volume from %s, to %s" % (image_path, volume_path))
+        self._resize(volume)
+        return {'provider_location': None}, True
 
     def _image_conversion_dir(self):
         tmpdir = (self.configuration.volume_tmp_dir or

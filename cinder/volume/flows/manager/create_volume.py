@@ -685,7 +685,7 @@ class CreateVolumeFromSpecTask(flow_utils.CinderTask):
     def _create_from_image(self, context, volume_ref,
                            image_location, image_id, image_meta,
                            image_service, **kwargs):
-        LOG.debug("Cloning %(volume_id)s from image %(image_id)s "
+        LOG.info("Cloning %(volume_id)s from image %(image_id)s "
                   " at location %(image_location)s.",
                   {'volume_id': volume_ref['id'],
                    'image_location': image_location, 'image_id': image_id})

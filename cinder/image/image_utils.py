@@ -517,6 +517,8 @@ class TemporaryImages(object):
     @classmethod
     @contextlib.contextmanager
     def fetch(cls, image_service, context, image_id):
+        LOG.info("fetch, cls: %s, image_service: %s, context: %s, image_id: %s" % (cls, image_service, context, image_id))
+
         tmp_images = cls.for_image_service(image_service).temporary_images
         with temporary_file() as tmp:
             fetch_verify_image(context, image_service, image_id, tmp)
