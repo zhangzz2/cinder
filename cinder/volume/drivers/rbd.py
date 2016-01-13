@@ -214,22 +214,14 @@ class RBDVolumeProxy(object):
     """
     def __init__(self, driver, name, pool=None, snapshot=None,
                  read_only=False):
-        client, ioctx = driver._connect_to_rados(pool)
-        if snapshot is not None:
-            snapshot = utils.convert_str(snapshot)
-
-        try:
-            self.volume = driver.rbd.Image(ioctx,
-                                           utils.convert_str(name),
-                                           snapshot=snapshot,
-                                           read_only=read_only)
-        except driver.rbd.Error:
-            LOG.exception(_LE("error opening rbd image %s"), name)
-            driver._disconnect_from_rados(client, ioctx)
-            raise
         self.driver = driver
-        self.client = client
-        self.ioctx = ioctx
+        self.name = name
+        self.pool = pool
+        self.snapshot = snapshot
+        self.read_only = read_only
+
+        self.client = None
+        self.ioctx = None
 
     def __enter__(self):
         return self
@@ -248,13 +240,15 @@ class RADOSClient(object):
     """Context manager to simplify error handling for connecting to ceph."""
     def __init__(self, driver, pool=None):
         self.driver = driver
-        self.cluster, self.ioctx = driver._connect_to_rados(pool)
+        self.pool = pool
+        self.cluster = None
+        self.ioctx = None
 
     def __enter__(self):
         return self
 
     def __exit__(self, type_, value, traceback):
-        self.driver._disconnect_from_rados(self.cluster, self.ioctx)
+        pass
 
     @property
     def features(self):
@@ -275,23 +269,25 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
         super(RBDDriver, self).__init__(*args, **kwargs)
         self.configuration.append_config_values(rbd_opts)
         self._stats = {}
+
+
+        LOG.warn(args)
+        LOG.warn(kwargs)
+
         # allow overrides for testing
         self.rados = kwargs.get('rados', rados)
         self.rbd = kwargs.get('rbd', rbd)
 
-        # All string args used with librbd must be None or utf-8 otherwise
-        # librbd will break.
-        for attr in ['rbd_cluster_name', 'rbd_user',
-                     'rbd_ceph_conf', 'rbd_pool']:
-            val = getattr(self.configuration, attr)
-            if val is not None:
-                setattr(self.configuration, attr, utils.convert_str(val))
+        self.args = args
+        self.kwargs = kwargs
+
 
     def check_for_setup_error(self):
         """Returns an error if prerequisites aren't met."""
         if rados is None:
-            msg = _('rados and rbd python libraries not found')
-            raise exception.VolumeBackendAPIException(data=msg)
+            msg = _('rados and rbd python libraries not found, fake for lichbd')
+            LOG.info(msg)
+            #raise exception.VolumeBackendAPIException(data=msg)
 
         # NOTE: Checking connection to ceph
         # RADOSClient __init__ method invokes _connect_to_rados
@@ -318,29 +314,7 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
     def _connect_to_rados(self, pool=None):
         LOG.debug("opening connection to ceph cluster (timeout=%s).",
                   self.configuration.rados_connect_timeout)
-
-        client = self.rados.Rados(
-            rados_id=self.configuration.rbd_user,
-            clustername=self.configuration.rbd_cluster_name,
-            conffile=self.configuration.rbd_ceph_conf)
-        if pool is not None:
-            pool = utils.convert_str(pool)
-        else:
-            pool = self.configuration.rbd_pool
-
-        try:
-            if self.configuration.rados_connect_timeout >= 0:
-                client.connect(timeout=
-                               self.configuration.rados_connect_timeout)
-            else:
-                client.connect()
-            ioctx = client.open_ioctx(pool)
-            return client, ioctx
-        except self.rados.Error:
-            msg = _("Error connecting to ceph cluster.")
-            LOG.exception(msg)
-            client.shutdown()
-            raise exception.VolumeBackendAPIException(data=msg)
+        pass
 
     def _disconnect_from_rados(self, client, ioctx):
         # closing an ioctx cannot raise an exception
@@ -387,28 +361,9 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
             'free_capacity_gb': 'unknown',
             'reserved_percentage': 0,
         }
-        backend_name = self.configuration.safe_get('volume_backend_name')
-        stats['volume_backend_name'] = backend_name or 'RBD'
-
-        try:
-            with RADOSClient(self) as client:
-                ret, outbuf, _outs = client.cluster.mon_command(
-                    '{"prefix":"df", "format":"json"}', '')
-                if ret != 0:
-                    LOG.warning(_LW('Unable to get rados pool stats.'))
-                else:
-                    outbuf = json.loads(outbuf)
-                    pool_stats = [pool for pool in outbuf['pools'] if
-                                  pool['name'] ==
-                                  self.configuration.rbd_pool][0]['stats']
-                    stats['free_capacity_gb'] = (
-                        pool_stats['max_avail'] // units.Gi)
-                    used_capacity_gb = pool_stats['bytes_used'] // units.Gi
-                    stats['total_capacity_gb'] = (stats['free_capacity_gb']
-                                                  + used_capacity_gb)
-        except self.rados.Error:
-            # just log and return unknown capacities
-            LOG.exception(_LE('error refreshing volume stats'))
+        stats['volume_backend_name'] = 'LICHRBD'
+        stats['free_capacity_gb'] = 100
+        stats['total_capacity_gb'] = 100
         self._stats = stats
 
     def get_volume_stats(self, refresh=False):
@@ -530,18 +485,9 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
         """Creates a logical volume."""
         size = int(volume['size']) * units.Gi
 
-        LOG.debug("creating volume '%s'", volume['name'])
-
-        chunk_size = self.configuration.rbd_store_chunk_size * units.Mi
-        order = int(math.log(chunk_size, 2))
-
-        with RADOSClient(self) as client:
-            self.RBDProxy().create(client.ioctx,
-                                   utils.convert_str(volume['name']),
-                                   size,
-                                   order,
-                                   old_format=False,
-                                   features=client.features)
+        LOG.info("%s" % (volume))
+        LOG.info("creating volume '%s' size: %d", volume['name'], size)
+        pass
 
     def _flatten(self, pool, volume_name):
         LOG.debug('flattening %(pool)s/%(img)s',
@@ -664,75 +610,9 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
         # NOTE(dosaboy): this was broken by commit cbe1d5f. Ensure names are
         #                utf-8 otherwise librbd will barf.
         volume_name = utils.convert_str(volume['name'])
-        with RADOSClient(self) as client:
-            try:
-                rbd_image = self.rbd.Image(client.ioctx, volume_name)
-            except self.rbd.ImageNotFound:
-                LOG.info(_LI("volume %s no longer exists in backend"),
-                         volume_name)
-                return
 
-            clone_snap = None
-            parent = None
-
-            # Ensure any backup snapshots are deleted
-            self._delete_backup_snaps(rbd_image)
-
-            # If the volume has non-clone snapshots this delete is expected to
-            # raise VolumeIsBusy so do so straight away.
-            try:
-                snaps = rbd_image.list_snaps()
-                for snap in snaps:
-                    if snap['name'].endswith('.clone_snap'):
-                        LOG.debug("volume has clone snapshot(s)")
-                        # We grab one of these and use it when fetching parent
-                        # info in case the volume has been flattened.
-                        clone_snap = snap['name']
-                        break
-
-                    raise exception.VolumeIsBusy(volume_name=volume_name)
-
-                # Determine if this volume is itself a clone
-                _pool, parent, parent_snap = self._get_clone_info(rbd_image,
-                                                                  volume_name,
-                                                                  clone_snap)
-            finally:
-                rbd_image.close()
-
-            @utils.retry(self.rbd.ImageBusy, retries=3)
-            def _try_remove_volume(client, volume_name):
-                self.RBDProxy().remove(client.ioctx, volume_name)
-
-            if clone_snap is None:
-                LOG.debug("deleting rbd volume %s", volume_name)
-                try:
-                    _try_remove_volume(client, volume_name)
-                except self.rbd.ImageBusy:
-                    msg = (_("ImageBusy error raised while deleting rbd "
-                             "volume. This may have been caused by a "
-                             "connection from a client that has crashed and, "
-                             "if so, may be resolved by retrying the delete "
-                             "after 30 seconds has elapsed."))
-                    LOG.warning(msg)
-                    # Now raise this so that volume stays available so that we
-                    # delete can be retried.
-                    raise exception.VolumeIsBusy(msg, volume_name=volume_name)
-                except self.rbd.ImageNotFound:
-                    LOG.info(_LI("RBD volume %s not found, allowing delete "
-                                 "operation to proceed."), volume_name)
-                    return
-
-                # If it is a clone, walk back up the parent chain deleting
-                # references.
-                if parent:
-                    LOG.debug("volume is a clone so cleaning references")
-                    self._delete_clone_parent_refs(client, parent, parent_snap)
-            else:
-                # If the volume has copy-on-write clones we will not be able to
-                # delete it. Instead we will keep it as a silent volume which
-                # will be deleted when it's snapshot and clones are deleted.
-                new_name = "%s.deleted" % (volume_name)
-                self.RBDProxy().rename(client.ioctx, volume_name, new_name)
+        LOG.info("%s" % (volume))
+        LOG.info("delete volume '%s' size: %d", volume_name)
 
     def create_snapshot(self, snapshot):
         """Creates an rbd snapshot."""
