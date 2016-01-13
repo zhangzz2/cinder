@@ -780,10 +780,11 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
         image_id = image_meta["id"]
         volume_id = volume["id"]
 
-        image_path = "/lichbd/image/%s" % (image_id)
-        volume_path = "/lichbd/volume/%s" % (image_id)
+        image_path = "/lichbd/images/%s" % (image_id)
+        volume_path = "/lichbd/volume/%s" % (volume_id)
 
-        #todo
+        lichbd.call('/opt/mds/lich/libexec/lich.snapshot --clone %s@%s %s' % (image_path, image_id, volume_path))
+
         LOG.info("create volume from %s, to %s" % (image_path, volume_path))
         self._resize(volume)
         return {'provider_location': None}, True

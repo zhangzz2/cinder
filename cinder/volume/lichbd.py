@@ -90,6 +90,9 @@ def lichbd_create_raw(path, size):
         else:
             raise_exp(shellcmd)
 
+#def lichbd_clone(src_path, dst_path):
+    #shell.call('/opt/mds/lich/libexec/lich.snapshot --clone %s@%s %s' % (src_path, snap_path, dst_path))
+
 def lichbd_copy(src_path, dst_path):
     shellcmd = None
     for i in range(5):
