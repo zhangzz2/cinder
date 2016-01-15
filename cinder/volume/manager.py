@@ -834,10 +834,13 @@ class VolumeManager(manager.SchedulerDependentManager):
         """Updates db to show volume is attached."""
         @utils.synchronized(volume_id, external=True)
         def do_attach():
+            #raise Exception(1, "fuckk")
             # check the volume status before attaching
             volume = self.db.volume_get(context, volume_id)
             volume_metadata = self.db.volume_admin_metadata_get(
                 context.elevated(), volume_id)
+            LOG.info("attachment. volume_metadata: %s", volume_metadata)
+
             if volume['status'] == 'attaching':
                 if (volume_metadata.get('attached_mode') and
                    volume_metadata.get('attached_mode') != mode):
@@ -860,10 +863,12 @@ class VolumeManager(manager.SchedulerDependentManager):
                 attachment = \
                     self.db.volume_attachment_get_by_host(context, volume_id,
                                                           host_name_sanitized)
-            if attachment is not None:
-                self.db.volume_update(context, volume_id,
-                                      {'status': 'in-use'})
-                return
+            LOG.info("attachment. %s, just skip", attachment)
+            #if attachment is not None:
+                #self.db.volume_update(context, volume_id,
+                                      #{'status': 'in-use'})
+                #LOG.info("attachment. is not None: retrun ")
+                #return
 
             self._notify_about_volume_usage(context, volume,
                                             "attach.start")
@@ -882,6 +887,8 @@ class VolumeManager(manager.SchedulerDependentManager):
                                                   'error_attaching'})
                 raise exception.InvalidUUID(uuid=instance_uuid)
 
+
+            LOG.info("attachment. check readonly, volume_metadata: %s", volume_metadata)
             volume = self.db.volume_get(context, volume_id)
 
             if volume_metadata.get('readonly') == 'True' and mode != 'ro':
@@ -890,13 +897,14 @@ class VolumeManager(manager.SchedulerDependentManager):
                 raise exception.InvalidVolumeAttachMode(mode=mode,
                                                         volume_id=volume_id)
 
+            LOG.info("driver attach")
             try:
                 # NOTE(flaper87): Verify the driver is enabled
                 # before going forward. The exception will be caught
                 # and the volume status updated.
                 utils.require_driver_initialized(self.driver)
 
-                LOG.debug('Attaching volume %(volume_id)s to instance '
+                LOG.info('Attaching volume %(volume_id)s to instance '
                           '%(instance)s at mountpoint %(mount)s on host '
                           '%(host)s.',
                           {'volume_id': volume_id, 'instance': instance_uuid,
@@ -913,6 +921,7 @@ class VolumeManager(manager.SchedulerDependentManager):
                         context, attachment_id,
                         {'attach_status': 'error_attaching'})
 
+            LOG.info("db.volume_attached")
             volume = self.db.volume_attached(context.elevated(),
                                              attachment_id,
                                              instance_uuid,
@@ -920,8 +929,8 @@ class VolumeManager(manager.SchedulerDependentManager):
                                              mountpoint,
                                              mode)
             self._notify_about_volume_usage(context, volume, "attach.end")
-            LOG.info(_LI("Attach volume completed successfully."),
-                     resource=volume)
+            LOG.info("Attach volume completed successfully. %s", volume_id)
+
             return self.db.volume_attachment_get(context, attachment_id)
         return do_attach()
 

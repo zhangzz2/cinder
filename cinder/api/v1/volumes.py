@@ -380,6 +380,8 @@ class VolumeController(wsgi.Controller):
         LOG.info(_LI("Create volume of %s GB"), size, context=context)
         multiattach = volume.get('multiattach', False)
         kwargs['multiattach'] = multiattach
+        LOG.info("kwargs: %s", kwargs)
+        LOG.info("multiattach: %s", multiattach)
 
         image_href = None
         image_uuid = None

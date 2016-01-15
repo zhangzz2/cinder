@@ -37,10 +37,12 @@ these objects be simple dictionaries.
 """
 
 from oslo_config import cfg
+from oslo_log import log as logging
 from oslo_db import concurrency as db_concurrency
 from oslo_db import options as db_options
 
 from cinder.api import common
+LOG = logging.getLogger(__name__)
 
 db_opts = [
     cfg.BoolOpt('enable_new_services',
@@ -158,6 +160,7 @@ def iscsi_target_create_safe(context, values):
 
 def volume_attach(context, values):
     """Attach a volume."""
+    LOG.info("attach volume, %s", values)
     return IMPL.volume_attach(context, values)
 
 

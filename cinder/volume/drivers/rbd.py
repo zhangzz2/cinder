@@ -368,10 +368,11 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
             'total_capacity_gb': 'unknown',
             'free_capacity_gb': 'unknown',
             'reserved_percentage': 0,
+            'multiattach': True,
         }
         stats['volume_backend_name'] = 'LICHRBD'
-        stats['free_capacity_gb'] = 100
-        stats['total_capacity_gb'] = 100
+        stats['free_capacity_gb'] = 10000
+        stats['total_capacity_gb'] = 10000
         self._stats = stats
 
     def get_volume_stats(self, refresh=False):

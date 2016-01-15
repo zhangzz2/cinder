@@ -416,8 +416,11 @@ class VolumeController(wsgi.Controller):
 
         kwargs['availability_zone'] = volume.get('availability_zone', None)
         kwargs['scheduler_hints'] = volume.get('scheduler_hints', None)
-        multiattach = volume.get('multiattach', False)
+        multiattach = True
+        #multiattach = volume.get('multiattach', False)
         kwargs['multiattach'] = multiattach
+        LOG.info("kwargs: %s", kwargs)
+        LOG.info("multiattach: %s", multiattach)
 
         new_volume = self.volume_api.create(context,
                                             size,
