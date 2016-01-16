@@ -498,6 +498,11 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
         LOG.info("creating volume '%s' size: %d", volume['name'], size)
         path = "lichbd:volume/%s" % (volume["id"])
         size = "%sG" % (size/1024/1024/1024)
+
+        lichbd.lichbd_mkdir("/lichbd")
+        lichbd.lichbd_mkdir("/lichbd/volume")
+        lichbd.lichbd_mkdir("/lichbd/image")
+
         lichbd.lichbd_create_raw(path, size)
 
     def _flatten(self, pool, volume_name):
@@ -783,6 +788,10 @@ class RBDDriver(driver.TransferVD, driver.ExtendVD,
 
         image_path = "/lichbd/images/%s" % (image_id)
         volume_path = "/lichbd/volume/%s" % (volume_id)
+
+        lichbd.lichbd_mkdir("/lichbd")
+        lichbd.lichbd_mkdir("/lichbd/volume")
+        lichbd.lichbd_mkdir("/lichbd/image")
 
         lichbd.call('/opt/mds/lich/libexec/lich.snapshot --clone %s@%s %s' % (image_path, image_id, volume_path))
 
