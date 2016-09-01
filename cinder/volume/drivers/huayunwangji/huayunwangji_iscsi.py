@@ -122,12 +122,32 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
     def create_volume(self, volume):
         size = "%s%s" % (int(volume.size), 'G')
         pool = self.name2pool(volume.name)
-
-        lichbd.lichbd_mkpool(pool)
         path = "%s/%s" % (pool, volume.name)
-        lichbd.lichbd_create(path, size)
+
+        if not lichbd.lichbd_pool_exist(pool):
+            lichbd.lichbd_mkpool(pool)
+
+        if not lichbd.lichbd_volume_exist(path):
+            lichbd.lichbd_create(path, size)
 
         LOG.debug("creating volume '%s' size %s", volume.name, size)
+
+    def create_cloned_volume(self, volume, src_vref):
+        LOG.debug("create cloned volume '%s' src_vref %s", volume, src_vref)
+
+        snapshot_id = "snapforclone-%s" % (volume.name)
+        snapshot = "%s@%s" % (self.name2volume(src_vref['name']), snapshot_id)
+        lichbd.lichbd_snap_create(snapshot)
+
+        target_pool = self.name2pool(volume.name)
+        target_volume = self.name2volume(volume.name)
+        if not lichbd.lichbd_pool_exist(target_pool):
+            lichbd.lichbd_mkpool(target_pool)
+        lichbd.lichbd_snap_clone(snapshot, target_volume)
+
+        if (volume.size > src_vref.size):
+            size = "%sG" % (volume.size)
+            self.lichbd.lichbd_volume_truncate(target, size)
 
     def clone_image(self, context, volume,
                     image_location, image_meta,
@@ -139,13 +159,15 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
             volume_id = image_location[0].split("//")[-1]
             volume_name = self.id2name(volume_id)
             snapshot = "%s@%s" % (self.name2volume(volume_name), self.name2id(volume_name))
-            self.create_snapshot(snapshot)
+            if not lichbd.lichbd_snap_exist(snapshot):
+                lichbd.lichbd_snap_create(snapshot)
 
             assert(volume.id == self.name2id(volume.name))
             pool = self.name2pool(volume.name)
-            lichbd.lichbd_mkpool(pool)
-            dst = self.name2volume(volume.name)
-            lichbd.lichbd_snap_clone(snapshot, dst)
+            if not lichbd.lichbd_pool_exist(pool):
+                lichbd.lichbd_mkpool(pool)
+            target = self.name2volume(volume.name)
+            lichbd.lichbd_snap_clone(snapshot, target)
 
             return {'provider_location': None}, True
 
@@ -154,11 +176,16 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
     def extend_volume(self, volume, new_size):
         """Extend an existing volume."""
-        pass
+        LOG.debug("resize volume '%s' to %s" % (volume.name, new_size))
+        target = self.name2volume(volume.name)
+        size = "%sG" % (new_size)
+        lichbd.lichbd_resize(target, size)
 
     def delete_volume(self, volume):
         """Deletes a logical volume."""
         LOG.debug("delete volume '%s'", volume.name)
+        target = self.name2volume(volume.name)
+        lichbd.lichbd_rm(target)
 
     def create_export(self, context, volume, connector):
         """Exports the volume."""
@@ -182,29 +209,39 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
     def ensure_export(self, context, volume):
         """Synchronously recreates an export for a logical volume."""
-        pass
+        LOG.debug("ensure export context: %s, volume: %s" % (context, volume))
 
     def remove_export(self, context, volume):
         """Removes an export for a logical volume."""
-        pass
+        LOG.debug("remove export context: %s, volume: %s" % (context, volume))
 
     def create_snapshot(self, snapshot):
         """Creates an snapshot."""
         LOG.debug("create snapshot %s" % (snapshot))
+        LOG.debug("create snapshot volume_name: %s" % (snapshot.volume_name))
+        LOG.debug("create snapshot snap_name: %s" % (snapshot.name))
+        snapshot = "%s@%s" % (self.name2volume(snapshot.volume_name), snapshot.name)
         lichbd.lichbd_snap_create(snapshot)
 
     def create_volume_from_snapshot(self, volume, snapshot):
         """Creates a volume from a snapshot."""
         LOG.debug("create volume from a snapshot")
+        raise NotImplementedError("")
 
     def delete_snapshot(self, snapshot):
         """Deletes an rbd snapshot."""
-        pass
+        LOG.debug("snapshot %s" % (snapshot))
+        LOG.debug("snapshot volume_name: %s" % (snapshot.volume_name))
+        LOG.debug("snapshot snap_name: %s" % (snapshot.name))
+        snapshot = "%s@%s" % (self.name2volume(snapshot.volume_name), snapshot.name)
+        lichbd.lichbd_snap_delete(snapshot)
 
     def migrate_volume(self, context, volume, host):
+        raise NotImplementedError("")
         return (False, None)
 
     def initialize_connection(self, volume, connector):
+        assert(volume.id == self.name2id(volume.name))
         LOG.debug("connection volume %s" % volume.name)
         LOG.debug("connection connector %s" % connector)
 
@@ -232,4 +269,8 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         """
 
     def terminate_connection(self, volume, connector, **kwargs):
+        LOG.debug("terminate connection")
+        LOG.debug("terminate connection volume: %s" % (volume))
+        LOG.debug("terminate connection connector : %s" % (connector))
+        LOG.debug("terminate connection kwargs : %s" % (kwargs))
         pass
