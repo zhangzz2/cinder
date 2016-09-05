@@ -21,16 +21,18 @@ Volume driver for Huayunwangji Fusionstor with iSCSI protocol.
 
 from __future__ import absolute_import
 
+import uuid
+
 from oslo_config import cfg
 from oslo_log import log as logging
 
 from cinder import exception
-from cinder.i18n import _, _LE, _LI, _LW
-#from cinder.image import image_utils
-#from cinder import utils
+from cinder.i18n import _
+# from cinder.i18n import _, _LE, _LI, _LW
+# from cinder.image import image_utils
+# from cinder import utils
 from cinder.volume import driver
-
-from cinder.volume.drivers.huayunwangji import lichbd 
+from cinder.volume.drivers.huayunwangji import lichbd
 
 LOG = logging.getLogger(__name__)
 
@@ -50,9 +52,10 @@ huayunwangji_iscsi_opts = [
 CONF = cfg.CONF
 CONF.register_opts(huayunwangji_iscsi_opts)
 
+
 class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
-                driver.CloneableImageVD, driver.SnapshotVD,
-                driver.MigrateVD, driver.BaseVD):
+                              driver.CloneableImageVD, driver.SnapshotVD,
+                              driver.MigrateVD, driver.BaseVD):
     """huayunwangji fusionstor iSCSI volume driver.
 
     Version history:
@@ -64,12 +67,10 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
     def __init__(self, *args, **kwargs):
         super(HuayunwangjiISCSIDriver, self).__init__(*args, **kwargs)
         self.configuration.append_config_values(huayunwangji_iscsi_opts)
-
         self.vip = getattr(self.configuration, 'huayunwangji_vip')
         self.iqn = getattr(self.configuration, 'huayunwangji_iqn')
-        self.manager_host = getattr(
-                self.configuration, 'huayunwangji_manager_host')
-
+        self.manager_host = getattr(self.configuration,
+                                    'huayunwangji_manager_host')
         self.lichbd = lichbd
 
     def _update_volume_stats(self):
@@ -123,8 +124,8 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         if not self.lichbd.lichbd_pool_exist(pool):
             self.lichbd.lichbd_mkpool(pool)
 
-        if not self.lichbd.lichbd_volume_exist(path):
-            self.lichbd.lichbd_create(path, size)
+        # if not self.lichbd.lichbd_volume_exist(path):
+        self.lichbd.lichbd_create(path, size)
 
         LOG.debug("creating volume '%s' size %s", volume.name, size)
 
@@ -150,15 +151,14 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
     def clone_image(self, context, volume,
                     image_location, image_meta,
                     image_service):
-        #'image_location': 
-        #(u'cinder://ea6544d0-9594-4598-8560-a5eb310626e5', None)
-        LOG.debug("clone image '%s', context: %s,image_location: %s,
-                image_meta: %s, image_service: %s",
-                volume.name, context, image_location,
-                image_meta, image_service)
+        # 'image_location':
+        # (u'cinder://ea6544d0-9594-4598-8560-a5eb310626e5', None)
+        LOG.debug("clone image '%s', context: %s,image_location: %s, \
+                  image_meta: %s, image_service: %s" % (
+                  volume.name, context, image_location,
+                  image_meta, image_service))
 
         if image_location:
-            url_locations = image_location[0]
             volume_id = image_location[0].split("//")[-1]
             snapshot = "%s@%s" % (self._id2volume(volume_id), volume_id)
             if not self.lichbd.lichbd_snap_exist(snapshot):
@@ -189,7 +189,7 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         LOG.debug("copy_volume_to_image context %s" % (context))
         LOG.debug("copy_volume_to_image volume %s" % (volume))
         LOG.debug("copy_volume_to_image image_service %s" % (image_service))
-        LOG.debug("copy_volume_to_image image_id %s" % (image_id))
+
         raise NotImplementedError()
 
     def extend_volume(self, volume, new_size):
@@ -222,11 +222,13 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         return {'provider_location': location,
                 'provider_auth': None, }
 
-        #iqn.2001-04-123.com.fusionstack:pool2.lunx
-        #model_update['provider_location'] = (
-            #'%s %s %s' % (volume['ipaddress'] + ':3260', volume['iqnname'], 0)
-        #if chap:
-            #model_update['provider_auth'] = ('CHAP %(username)s %(password)s'
+        """
+        iqn.2001-04-123.com.fusionstack:pool2.lunx
+        model_update['provider_location'] = (
+            '%s %s %s' % (volume['ipaddress'] + ':3260', volume['iqnname'], 0)
+        if chap:
+            model_update['provider_auth'] = ('CHAP %(username)s %(password)s'
+        """
 
     def ensure_export(self, context, volume):
         """Synchronously recreates an export for a logical volume."""
@@ -252,10 +254,10 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         LOG.debug("create volume from a snapshot")
 
-        snapshot = "%s@%s" % (self._id2volume(snapshot.volume_id, snapshot.id)
-
+        snapshot = "%s@%s" % (self._id2volume(snapshot.volume_id), snapshot.id)
         target_pool = self._id2pool(volume.id)
         target_volume = self._id2volume(volume.id)
+
         if not self.lichbd.lichbd_pool_exist(target_pool):
             self.lichbd.lichbd_mkpool(target_pool)
 
@@ -277,12 +279,12 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         self.lichbd.lichbd_snap_delete(snapshot)
 
     def migrate_volume(self, context, volume, host):
-        #http://docs.openstack.org/developer/cinder/devref/migration.html
+        # http://docs.openstack.org/developer/cinder/devref/migration.html
         raise NotImplementedError("")
         return (False, None)
 
-    def update_migrated_volume(self, ctxt, volume, new_volume,
-            original_volume_status):
+    def update_migrated_volume(self, ctxt, volume,
+                               new_volume, original_volume_status):
         """Return model update from huayunwangji for migrated volume.
 
         This method should rename the back-end volume name(id) on the
@@ -303,9 +305,10 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         data = {}
         data["target_discovered"] = False
-        data["target_iqn"] = "%s:%s.%s" % (
-                self.iqn, self._id2pool(volume.id), volume.name)
-        #data['target_lun'] = 0
+        data["target_iqn"] = "%s:%s.%s" % (self.iqn,
+                                           self._id2pool(volume.id),
+                                           volume.name)
+        # data['target_lun'] = 0
         data["target_portal"] = "%s:%s" % (self.vip, 3260)
         data["volume_id"] = volume['id']
         data["discard"] = False
