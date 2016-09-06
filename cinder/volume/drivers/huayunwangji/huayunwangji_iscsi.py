@@ -21,15 +21,21 @@ Volume driver for Huayunwangji Fusionstor with iSCSI protocol.
 
 from __future__ import absolute_import
 
+import copy
+import math
+import os
+import time
+import tempfile
 import uuid
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import fileutils
 
 from cinder import exception
-from cinder.i18n import _
+from cinder.i18n import _, _LW
 # from cinder.i18n import _, _LE, _LI, _LW
-# from cinder.image import image_utils
+from cinder.image import image_utils
 # from cinder import utils
 from cinder.volume import driver
 from cinder.volume.drivers.huayunwangji import lichbd
@@ -111,13 +117,21 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         return '%s/%s' % (self.__name2pool(name), name)
 
     def _id2volume(self, volume_id):
-        return "%s/%s" % self.__name2volume((self.__id2name(volume_id)))
+        return self.__name2volume((self.__id2name(volume_id)))
 
     def _id2pool(self, volume_id):
-        return "%s/%s" % self.__name2pool((self.__id2name(volume_id)))
+        return self.__name2pool((self.__id2name(volume_id)))
 
     def create_volume(self, volume):
-        size = "%s%s" % (int(volume.size), 'G')
+        LOG.debug("zz2 volume: %s volume.size %s" % (volume.name, volume.size))
+        LOG.debug("zz2 user_id %s" % (volume.user_id))
+        LOG.debug("zz2 project_id %s" % (volume.project_id))
+        LOG.debug("zz2 availableiliyt_zone %s" % (volume.availability_zone))
+
+        # time.sleep(100)
+        # raise NotImplementedError("")
+
+        size = "%s%s" % (int(volume.size), 'Gi')
         pool = self._id2pool(volume.id)
         path = "%s/%s" % (pool, volume.name)
 
@@ -175,6 +189,17 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         msg = "not support clone image without location"
         raise NotImplementedError(data=msg)
 
+    def _image_conversion_dir(self):
+        tmpdir = CONF.image_conversion_dir
+        if not tmpdir:
+            tmpdir = tempfile.gettempdir()
+            LOG.warning(_LW('image_conversion_dir not set, so use tmpfile'))
+
+        if not os.path.exists(tmpdir):
+            os.makedirs(tmpdir)
+
+        return tmpdir
+
     def copy_image_to_volume(self, context, volume, image_service, image_id):
         LOG.debug("copy_image_to_volume")
         LOG.debug("copy_image_to_volume context %s" % (context))
@@ -183,21 +208,52 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         LOG.debug("copy_image_to_volume image_id %s" % (image_id))
 
         raise NotImplementedError()
+        tmp_dir = self._image_conversion_dir()
+
+        with tempfile.NamedTemporaryFile(dir=tmp_dir) as tmp:
+            image_utils.fetch_to_raw(context, image_service, image_id,
+                                     tmp.name,
+                                     self.configuration.volume_dd_blocksize,
+                                     size=volume.size)
+
+            # self.delete_volume(volume)
+
+            src_path = tmp.name
+            dst_path = self._id2volume(volume.id)
+            dst_pool = self._id2pool(volume.id)
+
+            if not self.lichbd.lichbd_pool_exist(dst_pool):
+                self.lichbd.lichbd_mkpool(dst_pool)
+
+            self.lichbd.lichbd_import(src_path, dst_path)
 
     def copy_volume_to_image(self, context, volume, image_service, image_meta):
         LOG.debug("copy_volume_to_image")
         LOG.debug("copy_volume_to_image context %s" % (context))
         LOG.debug("copy_volume_to_image volume %s" % (volume))
         LOG.debug("copy_volume_to_image image_service %s" % (image_service))
+        LOG.debug("copy_volume_to_image image_meta %s" % (image_meta))
 
-        raise NotImplementedError()
+        tmp_dir = self._image_conversion_dir()
+        tmp_file = os.path.join(tmp_dir,
+                                volume.name + '-' + image_meta['id'])
+
+        with fileutils.remove_path_on_error(tmp_file):
+            src_path = self._id2volume(volume.id)
+            dst_path = tmp_file
+
+            self.lichbd.lichbd_export(src_path, dst_path)
+
+            image_utils.upload_volume(context, image_service,
+                                      image_meta, tmp_file)
+        os.unlink(tmp_file)
 
     def extend_volume(self, volume, new_size):
         """Extend an existing volume."""
 
         LOG.debug("resize volume '%s' to %s" % (volume.name, new_size))
         target = self._id2volume(volume.id)
-        size = "%sG" % (new_size)
+        size = "%sGi" % (new_size)
         self.lichbd.lichbd_resize(target, size)
 
     def delete_volume(self, volume):
@@ -215,7 +271,7 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         LOG.debug("context: %s", context)
         LOG.debug("connector: %s", connector)
 
-        self.create_volume(volume)
+        # self.create_volume(volume)
 
         iqn = "%s:%s.%s" % (self.iqn, self._id2pool(volume.id), volume.name)
         location = "%s %s %s" % (self.vip + ':3260', iqn, 0)

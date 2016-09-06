@@ -34,14 +34,8 @@ class ShellError(Exception):
 
 
 class ShellCmd(object):
-    '''
-    classdocs
-    '''
 
     def __init__(self, cmd, workdir=None, pipe=True):
-        '''
-        Constructor
-        '''
         self.cmd = cmd
         if pipe:
             self.process = subprocess.Popen(cmd, shell=True,
@@ -246,7 +240,7 @@ def lichbd_mv(dist, src):
 
 
 def lichbd_flatten(path):
-    # todo 实现flatten
+    # todo flatten
     return None
     proto = get_proto()
     cmd = 'lich.inspect flat %s 2>/dev/null' % ("%s/%s" % (proto, path))
