@@ -21,12 +21,19 @@ Volume driver for Huayunwangji Fusionstor with iSCSI protocol.
 
 from __future__ import absolute_import
 
-import copy
-import math
+# import copy
+# import math
+import errno
 import os
-import time
+# import time
 import tempfile
 import uuid
+
+from cinder import exception
+ from cinder.i18n import _
+# from cinder.i18n import _, _LE, _LI, _LW
+from cinder import context
+from cinder.volume import volume_types
 
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -107,6 +114,15 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         return self._stats
 
+    def _get_volume_type(self, volume):
+        volume_type = None
+        type_id = volume['volume_type_id']
+        if type_id:
+            ctxt = context.get_admin_context()
+            volume_type = volume_types.get_volume_type(ctxt, type_id)
+
+        return volume_type
+
     def __id2name(self, volume_id):
         return "volume-%s" % (volume_id)
 
@@ -130,6 +146,11 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         # time.sleep(100)
         # raise NotImplementedError("")
+        volume_type = self._get_volume_type(volume)
+        if volume_type:
+            LOG.debug("zz2 volume_type %s" % (volume_type))
+            LOG.debug("zz2 dir volume_type %s" % (dir(volume_type)))
+            LOG.debug("zz2 volume_type %s" % (volume_type["name"]))
 
         size = "%s%s" % (int(volume.size), 'Gi')
         pool = self._id2pool(volume.id)
@@ -187,7 +208,8 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
             return {'provider_location': None}, True
 
         msg = "not support clone image without location"
-        raise NotImplementedError(data=msg)
+        LOG.debug(msg)
+        return ({}, False)
 
     def _image_conversion_dir(self):
         tmpdir = CONF.image_conversion_dir
@@ -201,7 +223,6 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         return tmpdir
 
     def copy_image_to_volume(self, context, volume, image_service, image_id):
-        LOG.debug("copy_image_to_volume")
         LOG.debug("copy_image_to_volume context %s" % (context))
         LOG.debug("copy_image_to_volume volume %s" % (volume))
         LOG.debug("copy_image_to_volume image_service %s" % (image_service))
@@ -217,7 +238,6 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
                                      size=volume.size)
 
             # self.delete_volume(volume)
-
             src_path = tmp.name
             dst_path = self._id2volume(volume.id)
             dst_pool = self._id2pool(volume.id)
@@ -226,6 +246,16 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
                 self.lichbd.lichbd_mkpool(dst_pool)
 
             self.lichbd.lichbd_import(src_path, dst_path)
+
+    def backup_volume(self, context, backup, backup_service):
+        """Create a new backup from an existing volume."""
+        pass
+        LOG.debug("volume backup complete.")
+
+    def restore_backup(self, context, backup, volume, backup_service):
+        """Restore an existing backup to a new or existing volume."""
+        pass
+        LOG.debug("volume restore complete.")
 
     def copy_volume_to_image(self, context, volume, image_service, image_meta):
         LOG.debug("copy_volume_to_image")
@@ -262,6 +292,17 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         LOG.debug("delete volume '%s'", volume.name)
         target = self._id2volume(volume.id)
         self.lichbd.lichbd_rm(target)
+
+    def retype(self, context, volume, new_type, diff, host):
+        """Retypes a volume, allow Qos and extra_specs change."""
+
+        # No need to check encryption, extra_specs and Qos here as:
+        # encryptions have been checked as same.
+        # extra_specs are not used in the driver.
+        # Qos settings are not used in the driver.
+        LOG.debug('retype called for volume %s. No action '
+                  'required for volumes.', volume.id)
+        return True
 
     def create_export(self, context, volume, connector):
         """Exports the volume."""
@@ -324,6 +365,44 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
             size = "%sG" % (volume.size)
             self.lichbd.lichbd_volume_truncate(target_volume, size)
 
+    def manage_existing(self, volume, existing_ref):
+        """Manage an existing volume on the backend storage.
+            {'source-name': <pool_name/volume_name>}
+        """
+        src_path = existing_ref['source-name']
+        dst_path = self._id2volume(volume.id)
+        dst_pool = self._id2pool(volume.id)
+
+        if not self.lichbd.lichbd_pool_exist(dst_pool):
+            self.lichbd.lichbd_mkpool(dst_pool)
+
+        try:
+            self.lichbd.lichbd_mv(src_path, dst_path)
+        except self.lichbd.ShellError, e:
+            if e.code = errno.ENOENT:
+                raise exception.ManageExistingInvalidReference(
+                    existing_ref, reason=e.message)
+            else:
+                raise exception.VolumeBackendAPIException(data=e.message)
+
+    def manage_existing_get_size(self, volume, existing_ref):
+        """Return size of an existing image for manage_existing.
+        """
+        src_path = external_ref.get('source-name')
+
+        size = 0
+        try:
+            size = self.lichbd.lichbd_file_size(src_path)
+        except self.lichbd.ShellError, e:
+            if e.code = errno.ENOENT:
+                raise exception.ManageExistingInvalidReference(
+                    existing_ref, reason=e.message)
+            else:
+                raise exception.VolumeBackendAPIException(data=e.message)
+
+        convert_size = int(math.ceil(int(size))) / units.Gi
+        return convert_size
+
     def delete_snapshot(self, snapshot):
         """Deletes an rbd snapshot."""
 
@@ -353,7 +432,7 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         :param original_volume_status: The status of the original volume
         :returns: model_update to update DB with any needed changes
         """
-        pass
+        raise NotImplementedError()
 
     def initialize_connection(self, volume, connector):
         LOG.debug("connection volume %s" % volume.name)

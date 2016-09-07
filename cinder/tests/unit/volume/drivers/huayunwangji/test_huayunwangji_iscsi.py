@@ -42,14 +42,25 @@ test_volume = {
     'admin_metadata': {},
 }
 
+LICHBD = "cinder.volume.drivers.huayunwangji.lichbd"
+
 
 @ddt.ddt
 class HuayunwangjiISCSIDriverTestCase(test.TestCase):
 
     def setUp(self):
         super(HuayunwangjiISCSIDriverTestCase, self).setUp()
-        self.configuration = mock.Mock(spec=conf.Configuration)
-        self.driver = driver
+        self.cfg = mock.Mock(spec=conf.Configuration)
+
+        self.cfg.vip = '192.168.120.38'
+        self.cfg.iqn = 'iqn.2001-04-123.com.fusionstack'
+        self.manager_host = "192.168.120.38"
+
+        mock_exec = mock.Mock()
+        mock_exec.return_value = ('', '')
+        self.driver = driver.HuayunwangjiISCSIDriver(execute=mock_exec,
+                                                     configuration=self.cfg)
+        self.driver.set_initialized()
         # mock_create = mock.MagicMock(return_value=0)
         # mock.patch("lichbd.lichbd_pool_exist", mock_pool_exist)
 
@@ -59,8 +70,8 @@ class HuayunwangjiISCSIDriverTestCase(test.TestCase):
         mock_pool_exist = mock.MagicMock(return_value=True)
         # mock_volume_exist = mock.MagicMock(return_value=False)
 
-        with mock.patch("lichbd.lichbd_pool_exist", mock_pool_exist):
-            with mock.patch("lichbd.lichbd_create", mock_create):
+        with mock.patch("%s.lichbd_pool_exist" % (LICHBD), mock_pool_exist):
+            with mock.patch("%s.lichbd_create" % (LICHBD), mock_create):
                 self.driver.create_volume(test_volume)
 
     def test_create_volume_fail(self):
@@ -69,8 +80,8 @@ class HuayunwangjiISCSIDriverTestCase(test.TestCase):
         mock_pool_exist = mock.MagicMock(return_value=True)
         # mock_volume_exist = mock.MagicMock(return_value=False)
 
-        with mock.patch("lichbd.lichbd_pool_exist", mock_pool_exist):
-            with mock.patch("lichbd.lichbd_create", mock_create):
+        with mock.patch("%s.lichbd_pool_exist" % (LICHBD), mock_pool_exist):
+            with mock.patch("%s.lichbd_create" % (LICHBD), mock_create):
                 self.driver.create_volume(test_volume)
                 self.assertRaises(lichbd.ShellError,
                                   self.driver.create_volume,

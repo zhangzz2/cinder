@@ -31,6 +31,9 @@ def get_proto():
 
 class ShellError(Exception):
     '''shell error'''
+    def __init__(self, errno, msg):
+        self.code = errno
+        self.message = msg
 
 
 class ShellCmd(object):
@@ -100,7 +103,7 @@ def raise_exp(shellcmd):
     err.append('return code: %s' % shellcmd.process.returncode)
     err.append('stdout: %s' % shellcmd.stdout)
     err.append('stderr: %s' % shellcmd.stderr)
-    raise ShellError('\n'.join(err))
+    raise ShellError(shellcmd.returncode, '\n'.join(err))
 
 
 def lichbd_config():
@@ -254,6 +257,32 @@ def lichbd_volume_info(path):
     shellcmd = call_try("lichbd info %s -p %s" % (path, proto))
 
     return shellcmd.stdout.strip()
+
+
+def lichbd_file_size(path):
+    proto = get_proto()
+    cmd1 = "lichbd info %s -p %s 2>/dev/null" % (path, proto)
+    cmd2 = " | grep chknum | awk '{print $3}'"
+    cmd = cmd1 + cmd2
+    shellcmd = call_try(cmd)
+    if shellcmd.return_code != 0:
+        raise_exp(shellcmd)
+
+    size = shellcmd.stdout.strip()
+    return long(size) * 1024 * 1024
+
+
+def lichbd_file_actual_size(path):
+    proto = get_proto()
+    cmd1 = "lichbd info %s -p %s 2>/dev/null" % (path, proto)
+    cmd2 = " | grep localized | awk '{print $3}'"
+    cmd = cmd1 + cmd2
+    shellcmd = call_try(cmd)
+    if shellcmd.return_code != 0:
+        raise_exp(shellcmd)
+
+    size = shellcmd.stdout.strip()
+    return long(size) * 1024 * 1024
 
 
 def lichbd_volume_exist(path):
