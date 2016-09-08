@@ -22,28 +22,25 @@ Volume driver for Huayunwangji Fusionstor with iSCSI protocol.
 from __future__ import absolute_import
 
 # import copy
-# import math
+import math
 import errno
 import os
-# import time
+import time
 import tempfile
 import uuid
 
-from cinder import exception
- from cinder.i18n import _
-# from cinder.i18n import _, _LE, _LI, _LW
-from cinder import context
-from cinder.volume import volume_types
-
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import fileutils
+from oslo_utils import units
+# from oslo_utils import fileutils
 
+from cinder import context
+from cinder.volume import volume_types
 from cinder import exception
-from cinder.i18n import _, _LW
+from cinder.i18n import _, _LW, _LE
 # from cinder.i18n import _, _LE, _LI, _LW
 from cinder.image import image_utils
-# from cinder import utils
+from cinder import utils
 from cinder.volume import driver
 from cinder.volume.drivers.huayunwangji import lichbd
 
@@ -222,13 +219,17 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         return tmpdir
 
+    def _dd_copy(src_path, dst_path):
+        utils.execute("dd", "if=%s" % (src_path),
+                      "of=%s" % (dst_path), "oflag=direct")
+
     def copy_image_to_volume(self, context, volume, image_service, image_id):
         LOG.debug("copy_image_to_volume context %s" % (context))
         LOG.debug("copy_image_to_volume volume %s" % (volume))
+        LOG.debug("copy_image_to_volume volume.size %s" % (volume.size))
         LOG.debug("copy_image_to_volume image_service %s" % (image_service))
         LOG.debug("copy_image_to_volume image_id %s" % (image_id))
 
-        raise NotImplementedError()
         tmp_dir = self._image_conversion_dir()
 
         with tempfile.NamedTemporaryFile(dir=tmp_dir) as tmp:
@@ -237,25 +238,47 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
                                      self.configuration.volume_dd_blocksize,
                                      size=volume.size)
 
-            # self.delete_volume(volume)
+            size = math.ceil(float(utils.get_file_size(tmp.name)) / units.Gi)
             src_path = tmp.name
-            dst_path = self._id2volume(volume.id)
-            dst_pool = self._id2pool(volume.id)
 
-            if not self.lichbd.lichbd_pool_exist(dst_pool):
-                self.lichbd.lichbd_mkpool(dst_pool)
+            self.create_volume(volume)
+            if (size > volume.size):
+                self.extend_volume(volume, size)
 
-            self.lichbd.lichbd_import(src_path, dst_path)
+            by_path = self._makesure_login(volume)
+            try:
+                self._dd_copy(src_path, by_path)
+            except Exception:
+                self._makesure_logout(volume)
+                raise
 
     def backup_volume(self, context, backup, backup_service):
         """Create a new backup from an existing volume."""
-        pass
-        LOG.debug("volume backup complete.")
+        volume = self.db.volume_get(context, backup.volume_id)
+        by_path = self._makesure_login(volume)
+
+        try:
+            with open(by_path, "rb") as f:
+                backup_service.backup(backup, f)
+        except Exception:
+            self._makesure_logout(volume)
+            raise
+
+        LOG.debug("volume backup complete. %s" % (by_path))
 
     def restore_backup(self, context, backup, volume, backup_service):
         """Restore an existing backup to a new or existing volume."""
-        pass
-        LOG.debug("volume restore complete.")
+        volume = self.db.volume_get(context, backup.volume_id)
+        by_path = self._makesure_login(volume)
+
+        try:
+            with open(by_path, "wb") as f:
+                backup_service.restore(backup, volume.id, f)
+        except Exception:
+            self._makesure_logout(volume)
+            raise
+
+        LOG.debug("volume restore complete. %s" % (by_path))
 
     def copy_volume_to_image(self, context, volume, image_service, image_meta):
         LOG.debug("copy_volume_to_image")
@@ -264,19 +287,13 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         LOG.debug("copy_volume_to_image image_service %s" % (image_service))
         LOG.debug("copy_volume_to_image image_meta %s" % (image_meta))
 
-        tmp_dir = self._image_conversion_dir()
-        tmp_file = os.path.join(tmp_dir,
-                                volume.name + '-' + image_meta['id'])
-
-        with fileutils.remove_path_on_error(tmp_file):
-            src_path = self._id2volume(volume.id)
-            dst_path = tmp_file
-
-            self.lichbd.lichbd_export(src_path, dst_path)
-
-            image_utils.upload_volume(context, image_service,
-                                      image_meta, tmp_file)
-        os.unlink(tmp_file)
+        by_path = self._makesure_login(volume)
+        try:
+            image_utils.upload_volume(context,
+                                      image_service, image_meta, by_path)
+        except Exception:
+            self._makesure_logout(volume)
+            raise
 
     def extend_volume(self, volume, new_size):
         """Extend an existing volume."""
@@ -378,8 +395,8 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         try:
             self.lichbd.lichbd_mv(src_path, dst_path)
-        except self.lichbd.ShellError, e:
-            if e.code = errno.ENOENT:
+        except lichbd.ShellError, e:
+            if e.code == errno.ENOENT:
                 raise exception.ManageExistingInvalidReference(
                     existing_ref, reason=e.message)
             else:
@@ -388,13 +405,13 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
     def manage_existing_get_size(self, volume, existing_ref):
         """Return size of an existing image for manage_existing.
         """
-        src_path = external_ref.get('source-name')
+        src_path = existing_ref.get('source-name')
 
         size = 0
         try:
             size = self.lichbd.lichbd_file_size(src_path)
         except self.lichbd.ShellError, e:
-            if e.code = errno.ENOENT:
+            if e.code == errno.ENOENT:
                 raise exception.ManageExistingInvalidReference(
                     existing_ref, reason=e.message)
             else:
@@ -415,7 +432,6 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
     def migrate_volume(self, context, volume, host):
         # http://docs.openstack.org/developer/cinder/devref/migration.html
-        raise NotImplementedError("")
         return (False, None)
 
     def update_migrated_volume(self, ctxt, volume,
@@ -432,12 +448,30 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         :param original_volume_status: The status of the original volume
         :returns: model_update to update DB with any needed changes
         """
-        raise NotImplementedError()
+        name_id = None
+        provider_location = None
 
-    def initialize_connection(self, volume, connector):
-        LOG.debug("connection volume %s" % volume.name)
-        LOG.debug("connection connector %s" % connector)
+        src_path = self._id2volume(new_volume.id)
+        dst_path = self._id2volume(volume.id)
+        dst_pool = self._id2pool(volume.id)
 
+        if not self.lichbd.lichbd_pool_exist(dst_pool):
+            self.lichbd.lichbd_mkpool(dst_pool)
+
+        try:
+            self.lichbd.lichbd_mv(src_path, dst_path)
+        except self.lichbd.ShellError, e:
+            if e.code == errno.ENOENT:
+                LOG.error(_LE('Unable to rename the logical volume '
+                              'for %s to %s.'), src_path, dst_path)
+                name_id = new_volume._name_id or new_volume.id
+                provider_location = new_volume['provider_location']
+            else:
+                raise exception.VolumeBackendAPIException(data=e.message)
+
+        return {'_name_id': name_id, 'provider_location': provider_location}
+
+    def _initialize_connection(self, volume):
         data = {}
         data["target_discovered"] = False
         data["target_iqn"] = "%s:%s.%s" % (self.iqn,
@@ -463,9 +497,78 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
             }
         """
 
+    def initialize_connection(self, volume, connector):
+        LOG.debug("connection volume %s" % volume.name)
+        LOG.debug("connection connector %s" % connector)
+
+        return self._initialize_connection(volume)
+
     def terminate_connection(self, volume, connector, **kwargs):
         LOG.debug("terminate connection")
         LOG.debug("terminate connection volume: %s" % (volume))
         LOG.debug("terminate connection connector : %s" % (connector))
         LOG.debug("terminate connection kwargs : %s" % (kwargs))
         pass
+
+    def _makesure_login(self, volume):
+        """
+        /dev/disk/by-path/
+        ip-192.168.120.38:3260-iscsi-iqn.2001-04-123.com.fusionstack
+        :volume-37bf.volume-37bf545f-0cfa-4361-a4bc-eda3f6d30809-lun-0
+        """
+
+        self.ensure_export(context, volume)
+
+        connection = self._initialize_connection(volume)
+        iscsi_properties = connection["data"]
+
+        x = iscsi_properties
+        by_path = "/dev/disk/by-path"
+        f = "ip-%s-iscsi-%s-lun-0" % (x["target_portal"], x["iqn"])
+        by_path = os.path.join(by_path, f)
+
+        iscsi_command = ('--op', 'new', '--interface', 'default')
+        self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+        retry_max = 30
+        while (retry_max > 0):
+            iscsi_command = ('--login')
+            self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+            if os.path.islink(by_path):
+                break
+
+            iscsi_command = ('--logout')
+            self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+            LOG.warning(_LW('Failed to login volume %s, retry: %s') % (
+                iscsi_properties, retry_max))
+            retry_max = retry_max - 1
+            time.sleep(3)
+
+        return by_path
+
+    def _makesure_logout(self, volume):
+        connection = self._initialize_connection(volume)
+        iscsi_properties = connection["data"]
+
+        x = iscsi_properties
+        by_path = "/dev/disk/by-path"
+        f = "ip-%s-iscsi-%s-lun-0" % (x["target_portal"], x["iqn"])
+        by_path = os.path.join(by_path, f)
+
+        retry_max = 30
+        while (retry_max > 0):
+            iscsi_command = ('--logout')
+            self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+            if not os.path.islink(by_path):
+                break
+
+            LOG.warning(_LW('Failed to logout volume %s, retry: %s') % (
+                iscsi_properties, retry_max))
+            retry_max = retry_max - 1
+            time.sleep(3)
+
+        iscsi_command = ('--op', 'delete')
+        self._run_iscsiadm(iscsi_properties, iscsi_command)
