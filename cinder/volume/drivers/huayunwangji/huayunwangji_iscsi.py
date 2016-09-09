@@ -38,6 +38,8 @@ from cinder import context
 from cinder.volume import volume_types
 from cinder import exception
 from cinder.i18n import _, _LW, _LE
+# from cinder import objects
+from cinder.objects import fields
 # from cinder.i18n import _, _LE, _LI, _LW
 from cinder.image import image_utils
 from cinder import utils
@@ -63,7 +65,8 @@ CONF = cfg.CONF
 CONF.register_opts(huayunwangji_iscsi_opts)
 
 
-class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
+class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
+                              driver.ExtendVD,
                               driver.CloneableImageVD, driver.SnapshotVD,
                               driver.MigrateVD, driver.BaseVD):
     """huayunwangji fusionstor iSCSI volume driver.
@@ -92,6 +95,7 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         data['total_capacity_gb'] = 1000
         data['free_capacity_gb'] = 1000
         data['reserved_percentage'] = 1
+        data['consistencygroup_support'] = True
         data['multiattach'] = True
         self._stats = data
 
@@ -151,13 +155,17 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         size = "%s%s" % (int(volume.size), 'Gi')
         pool = self._id2pool(volume.id)
-        path = "%s/%s" % (pool, volume.name)
+        path = self._id2volume(volume.id)
 
         if not self.lichbd.lichbd_pool_exist(pool):
             self.lichbd.lichbd_mkpool(pool)
 
         # if not self.lichbd.lichbd_volume_exist(path):
         self.lichbd.lichbd_create(path, size)
+
+        if (volume.get('consistencygroup_id')):
+            group_name = volume['consistencygroup_id']
+            self.lichbd.lichbd_cg_add_volume(group_name, [path])
 
         LOG.debug("creating volume '%s' size %s", volume.name, size)
 
@@ -177,8 +185,12 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         self.lichbd.lichbd_snap_delete(snapshot)
 
         if (volume.size > src_vref.size):
-            size = "%sG" % (volume.size)
+            size = "%sGi" % (volume.size)
             self.lichbd.lichbd_volume_truncate(target_volume, size)
+
+        if (volume.get('consistencygroup_id')):
+            group_name = volume['consistencygroup_id']
+            self.lichbd.lichbd_cg_add_volume(group_name, [target_volume])
 
     def clone_image(self, context, volume,
                     image_location, image_meta,
@@ -251,6 +263,11 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
             except Exception:
                 self._makesure_logout(volume)
                 raise
+
+        if (volume.get('consistencygroup_id')):
+            group_name = volume['consistencygroup_id']
+            path = self._id2volume(volume['id'])
+            self.lichbd.lichbd_cg_add_volume(group_name, [path])
 
     def backup_volume(self, context, backup, backup_service):
         """Create a new backup from an existing volume."""
@@ -360,27 +377,41 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         LOG.debug("create snapshot %s" % (snapshot))
         LOG.debug("create snapshot volume_name: %s" % (snapshot.volume_name))
         LOG.debug("create snapshot snap_name: %s" % (snapshot.name))
-        snapshot = "%s@%s" % (self._id2volume(snapshot.volume_id), snapshot.id)
-        self.lichbd.lichbd_snap_create(snapshot)
+
+        snap_path = self._get_snap_path(snapshot)
+        self.lichbd.lichbd_snap_create(snap_path)
+
+    def _get_snap_path(self, snapshot):
+        if snapshot.get('cgsnapshot_id'):
+            snap_path = "%s@%s" % (self._id2volume(snapshot.volume_id),
+                                   self._get_cgsnap_name(snapshot.cgsnapshot))
+        else:
+            snap_path = "%s@%s" % (self._id2volume(snapshot.volume_id),
+                                   snapshot.id)
+        return snap_path
 
     def create_volume_from_snapshot(self, volume, snapshot):
         """Creates a volume from a snapshot."""
 
         LOG.debug("create volume from a snapshot")
 
-        snapshot = "%s@%s" % (self._id2volume(snapshot.volume_id), snapshot.id)
+        snap_path = self._get_snap_path(snapshot)
         target_pool = self._id2pool(volume.id)
         target_volume = self._id2volume(volume.id)
 
         if not self.lichbd.lichbd_pool_exist(target_pool):
             self.lichbd.lichbd_mkpool(target_pool)
 
-        self.lichbd.lichbd_snap_clone(snapshot, target_volume)
+        self.lichbd.lichbd_snap_clone(snap_path, target_volume)
         self.lichbd.lichbd_flatten(target_volume)
 
         if (volume.size > snapshot.volume_size):
-            size = "%sG" % (volume.size)
+            size = "%sGi" % (volume.size)
             self.lichbd.lichbd_volume_truncate(target_volume, size)
+
+        if (volume.get('consistencygroup_id')):
+            group_name = volume['consistencygroup_id']
+            self.lichbd.lichbd_cg_add_volume(group_name, [target_volume])
 
     def manage_existing(self, volume, existing_ref):
         """Manage an existing volume on the backend storage.
@@ -427,8 +458,9 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
         LOG.debug("snapshot volume_name: %s" % (snapshot.volume_name))
         LOG.debug("snapshot volume_id: %s" % (snapshot.volume_id))
         LOG.debug("snapshot snap_name: %s" % (snapshot.name))
-        snapshot = "%s@%s" % (self._id2volume(snapshot.volume_id), snapshot.id)
-        self.lichbd.lichbd_snap_delete(snapshot)
+
+        snap_path = self._get_snap_path(snapshot)
+        self.lichbd.lichbd_snap_delete(snap_path)
 
     def migrate_volume(self, context, volume, host):
         # http://docs.openstack.org/developer/cinder/devref/migration.html
@@ -572,3 +604,108 @@ class HuayunwangjiISCSIDriver(driver.TransferVD, driver.ExtendVD,
 
         iscsi_command = ('--op', 'delete')
         self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+    def _get_cgsnap_name(self, cgsnapshot):
+        return '%s--%s' % (cgsnapshot['consistencygroup_id'], cgsnapshot['id'])
+
+    def create_cgsnapshot(self, context, cgsnapshot, snapshots):
+        """Creates a cgsnapshot."""
+        LOG.debug("cgsnapshot: %s, snapshots: %s" % (cgsnapshot, snapshots))
+
+        group_name = cgsnapshot['consistencygroup_id']
+        snapshot_name = self._get_cgsnap_name(cgsnapshot)
+        self.lichbd.lichbd_cgsnapshot_create(group_name, snapshot_name)
+        return (None, None)
+
+    def delete_cgsnapshot(self, context, cgsnapshot, snapshots):
+        """Deletes a cgsnapshot."""
+        LOG.debug("cgsnapshot: %s, snapshots: %s" % (cgsnapshot, snapshots))
+
+        group_name = cgsnapshot['consistencygroup_id']
+        snapshot_name = self._get_cgsnap_name(cgsnapshot)
+        self.lichbd.lichbd_cgsnapshot_delete(group_name, snapshot_name)
+        return (None, None)
+
+    def create_consistencygroup(self, context, group):
+        """Creates a consistencygroup."""
+        LOG.debug("group: %s" % (group))
+        self.lichbd.lichbd_cg_create(group['id'])
+        return {'status': fields.ConsistencyGroupStatus.AVAILABLE}
+
+    def delete_consistencygroup(self, context, group, volumes):
+        """Deletes a consistency group."""
+        LOG.debug("group: %s, volume: %s" % (group, volumes))
+
+        self.lichbd.lichbd_cg_delete(group['id'])
+        return (None, None)
+
+    def update_consistencygroup(self, context, group,
+                                add_volumes=None, remove_volumes=None):
+        """Updates a consistency group.
+
+        :param context: the context of the caller.
+        :param group: the dictionary of the consistency group to be updated.
+        :param add_volumes: a list of volume dictionaries to be added.
+        :param remove_volumes: a list of volume dictionaries to be removed.
+        :returns: model_update, add_volumes_update, remove_volumes_update
+        """
+        add_volumes = add_volumes if add_volumes else []
+        remove_volumes = remove_volumes if remove_volumes else []
+
+        add_volumes = [self._id2volume(x['id']) for x in add_volumes]
+        remove_volumes = [self._id2volume(x['id']) for x in remove_volumes]
+        group_name = group['id']
+
+        if add_volumes:
+            self.lichbd.lichbd_cg_add_volume(group_name, add_volumes)
+
+        if remove_volumes:
+            self.lichbd.lichbd_cg_remove_volume(group_name, add_volumes)
+
+        return None, None, None
+
+    def create_consistencygroup_from_src(self, context, group, volumes,
+                                         cgsnapshot=None, snapshots=None,
+                                         source_cg=None, source_vols=None):
+        """Creates a consistencygroup from source.
+
+        :param context: the context of the caller.
+        :param group: the dictionary of the consistency group to be created.
+        :param volumes: a list of volume dictionaries in the group.
+        :param cgsnapshot: the dictionary of the cgsnapshot as source.
+        :param snapshots: a list of snapshot dictionaries in the cgsnapshot.
+        :param source_cg: the dictionary of a consistency group as source.
+        :param source_vols: a list of volume dictionaries in the source_cg.
+        :returns model_update, volumes_model_update
+        """
+        if not (cgsnapshot and snapshots and not source_cg or
+                source_cg and source_vols and not cgsnapshot):
+            msg = _("create_consistencygroup_from_src only supports a "
+                    "cgsnapshot source or a consistency group source. "
+                    "Multiple sources cannot be used.")
+            raise exception.InvalidInput(msg)
+
+        if cgsnapshot:
+            for volume, snapshot in zip(volumes, snapshots):
+                self.create_volume_from_snapshot(volume, snapshot)
+        elif source_cg:
+            snap_name = "snapforcreatecg-%s" % (uuid.uuid4().__str__())
+            self.lichbd.lichbd_cgsnapshot_create(source_cg['id'], snap_name)
+
+            for volume, src_vol in zip(volumes, source_vols):
+                src = "%s@%s" % (self._id2volume(src_vol["id"]), snap_name)
+                dst = self._id2volume(volume['id'])
+                self.lichbd.lichbd_snap_clone(src, dst)
+                self.lichbd.lichbd_flatten(dst)
+
+                if volume["size"] > src_vol["size"]:
+                    size = "%sGi" % (volume.size)
+                    self.lichbd.lichbd_volume_truncate(dst, size)
+
+            self.lichbd.lichbd_cgsnapshot_delete(source_cg['id'], snap_name)
+
+        self.lichbd.lichbd_cg_create(group['id'])
+        paths = [self._id2volume(x) for x in volumes]
+        self.lichbd.lichbd_cg_add_volume(group['id'], paths)
+
+        return None, None

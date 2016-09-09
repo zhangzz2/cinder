@@ -421,3 +421,35 @@ def lichbd_snap_unprotect(snap_path):
         raise_exp(shellcmd)
 
     return shellcmd.stdout
+
+
+def lichbd_cg_create(group_name):
+    pass
+
+
+def lichbd_cg_delete(group_name):
+    pass
+
+
+def lichbd_cg_add_volume(group_name, volumes):
+    '''volumes = [pool2/volume2, pool3/v, ...]
+    '''
+    pass
+
+
+def lichbd_cg_remove_volume(group_name, volumes):
+    '''volumes = [pool2/volume2, pool3/v, ...]
+    '''
+    return None
+
+
+def lichbd_cgsnapshot_create(group_name, snapshot_name):
+    '''volumes = [pool2/volume2, pool3/v, ...]
+    '''
+    return None
+
+
+def lichbd_cgsnapshot_delete(group_name, snapshot_name):
+    '''volumes = [pool2/volume2, pool3/v, ...]
+    '''
+    return None
