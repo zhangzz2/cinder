@@ -30,14 +30,14 @@ if __name__ == "__main__":
     size = "%sB" % (1*1024*1024*1024)
     vol_name = '%s/volume_of_%s' % (pool_name, pool_name)
 
-    _, resp = volumem.create(vol_name, size, provisioning='thin', protocol='iscsi')
+    _, resp = volumem.create(vol_name, 1, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-create---', resp
 
     _, resp = volumem.stat(vol_name)
     print 'zz2---volume-stat---', resp
 
     newsize = "%sB" % (2*1024*1024*1024)
-    _, resp = volumem.resize(vol_name, newsize, provisioning='thin', protocol='iscsi')
+    _, resp = volumem.resize(vol_name, 2, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-resize---', resp
 
     _, resp = volumem.delete(vol_name, provisioning='thin', protocol='iscsi')
@@ -46,25 +46,30 @@ if __name__ == "__main__":
     # snap test
     size = "%sB" % (1*1024*1024*1024)
     vol_name = '%s/volume_of_%s_for_snap' % (pool_name, pool_name)
-    _, resp = volumem.create(vol_name, size, provisioning='thin', protocol='iscsi')
+    _, resp = volumem.create(vol_name, 1, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-create---', resp
 
     snap_name = 'snap1'
-    _, rest = snapshotm.create(vol_name, snap_name,  protocol='iscsi')
+    _, resp = snapshotm.create(vol_name, snap_name,  protocol='iscsi')
     print 'zz2---snap-create---', resp
 
-    _, rest = snapshotm.stat(vol_name, snap_name,  protocol='iscsi')
+    _, resp = volumem.list_snapshots(vol_name, protocol='iscsi')
+    print 'zz2---snap-list---', resp
+    print 'zz2---snap-list---', resp.records
+    raise Exception('fuck')
+
+    _, resp = snapshotm.stat(vol_name, snap_name,  protocol='iscsi')
     print 'zz2---snap-stat--', resp
 
     vol_name_clone = '%s/volume_of_%s_for_snap_clone' % (pool_name, pool_name)
-    _, rest = snapshotm.clone(vol_name, snap_name,  protocol='iscsi')
+    _, resp = snapshotm.clone(vol_name, snap_name,  protocol='iscsi')
     print 'zz2---snap-stat--', resp
 
     # snap_name 是不是可以取消
-    _, rest = snapshotm.flatten(vol_name_clone, snap_name,  protocol='iscsi')
+    _, resp = snapshotm.flatten(vol_name_clone, snap_name,  protocol='iscsi')
     print 'zz2---snap-stat--', resp
 
-    _, rest = snapshotm.delete(vol_name, snap_name,  protocol='iscsi')
+    _, resp = snapshotm.delete(vol_name, snap_name,  protocol='iscsi')
     print 'zz2---snap-stat--', resp
 
 """

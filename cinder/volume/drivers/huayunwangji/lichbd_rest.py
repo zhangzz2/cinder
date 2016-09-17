@@ -159,7 +159,7 @@ def lichbd_volume_stat(path):
     """
     _, resp = volumem.stat(path, protocol='iscsi')
     check_resp(resp)
-    stat = resp["records"]
+    stat = resp.records
     return stat
 
 
@@ -218,9 +218,14 @@ def lichbd_snap_delete(snap_path):
 
 
 def lichbd_snap_list(image_path):
-    _, resp = snapshotm.list(image_path, protocol='iscsi')
+    _, resp = volumem.list_snapshots(image_path, protocol='iscsi')
     check_resp(resp)
-    return resp['records']
+
+    snaps = []
+    for snap in resp.records:
+        snaps.append("%s@%s" % (image_path, snap["name"]))
+
+    return snaps
 
 
 def lichbd_snap_clone(src, dst):
