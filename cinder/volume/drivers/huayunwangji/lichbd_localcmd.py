@@ -19,21 +19,15 @@ import subprocess
 import time
 
 from oslo_log import log as logging
+from cinder.volume.drivers.huayunwangji.lichbd_common import LichbdError
 
 LOG = logging.getLogger(__name__)
 
 # https://wiki.openstack.org/wiki/Cinder/how-to-contribute-a-driver
 
 
-def get_proto():
+def lichbd_get_proto():
     return 'iscsi'
-
-
-class ShellError(Exception):
-    '''shell error'''
-    def __init__(self, errno, msg):
-        self.code = errno
-        self.message = msg
 
 
 class ShellCmd(object):
@@ -63,7 +57,7 @@ class ShellCmd(object):
         err.append('stdout: %s' % self.stdout)
         err.append('stderr: %s' % self.stderr)
 
-        raise ShellError('\n'.join(err))
+        raise LichbdError('\n'.join(err))
 
     def __call__(self, is_exception=True):
         LOG.debug(self.cmd)
@@ -103,7 +97,7 @@ def raise_exp(shellcmd):
     err.append('return code: %s' % shellcmd.process.returncode)
     err.append('stdout: %s' % shellcmd.stdout)
     err.append('stderr: %s' % shellcmd.stderr)
-    raise ShellError(shellcmd.returncode, '\n'.join(err))
+    raise LichbdError(shellcmd.return_code, '\n'.join(err))
 
 
 def lichbd_config():
@@ -120,25 +114,15 @@ def lichbd_get_iqn():
     return iqn
 
 
-def lichbd_get_qemu_path():
-    qemu_path = "/opt/fusionstack/qemu/bin/qemu-system-x86_64"
-    return qemu_path
-
-
-def lichbd_get_qemu_img_path():
-    qemu_path = "/opt/fusionstack/qemu/bin/qemu-img"
-    return qemu_path
-
-
-def lichbd_mkpool(path):
-    proto = get_proto()
+def lichbd_pool_creat(path):
+    proto = lichbd_get_proto()
     shellcmd = call_try('lichbd mkpool %s -p %s 2>/dev/null' % (path, proto))
     if shellcmd.return_code != 0:
         raise_exp(shellcmd)
 
 
 def lichbd_lspools():
-    proto = get_proto()
+    proto = lichbd_get_proto()
     shellcmd = call_try('lichbd lspools -p %s 2>/dev/null' % proto)
     if shellcmd.return_code != 0:
         raise_exp(shellcmd)
@@ -155,36 +139,36 @@ def lichbd_pool_exist(path):
     return (path in pools)
 
 
-def lichbd_rmpool(path):
-    proto = get_proto()
+def lichbd_pool_delete(path):
+    proto = lichbd_get_proto()
     shellcmd = call_try('lichbd rmpool %s -p %s 2>/dev/null' % (path, proto))
     if shellcmd.return_code != 0:
         raise_exp(shellcmd)
 
 
-def lichbd_create(path, size):
-    proto = get_proto()
+def lichbd_volume_create(path, size):
+    proto = lichbd_get_proto()
     cmd = 'lichbd create %s --size %s -p %s 2>/dev/null' % (path, size, proto)
     shellcmd = call_try(cmd)
     if shellcmd.return_code != 0:
         raise_exp(shellcmd)
 
 
-def lichbd_resize(path, size):
-    proto = get_proto()
+def lichbd_volume_resize(path, size):
+    proto = lichbd_get_proto()
     cmd = "lichbd resize %s --size %s -p %s 2>/dev/null" % (path, size, proto)
     shellcmd = call_try(cmd)
     if shellcmd.return_code != 0:
         raise_exp(shellcmd)
 
 
-def lichbd_create_raw(path, size):
-    lichbd_create(path, size)
+def lichbd_volume_create_raw(path, size):
+    lichbd_volume_create(path, size)
 
 
-def lichbd_copy(src_path, dst_path):
+def lichbd_volume_copy(src_path, dst_path):
     shellcmd = None
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd copy %s %s -p %s 2>/dev/null' % (src_path, dst_path, proto)
     shellcmd = call_try(cmd)
     if shellcmd.return_code == 0:
@@ -193,27 +177,31 @@ def lichbd_copy(src_path, dst_path):
         if dst_path.startswith(":"):
             call_try("rm -rf %s" % (dst_path.lstrip(":")))
         else:
-            lichbd_rm(dst_path)
+            lichbd_volume_delete(dst_path)
 
     raise_exp(shellcmd)
 
 
+def lichbd_volume_clone_depth(volume):
+    return 0
+
+
 def lichbd_import(src_path, dst_path):
     shellcmd = None
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd import %s %s -p %s 2>/dev/null' % (src_path, dst_path, proto)
     shellcmd = call_try(cmd)
     if shellcmd.return_code == 0:
         return shellcmd
     else:
-        lichbd_rm(dst_path)
+        lichbd_volume_delete(dst_path)
 
     raise_exp(shellcmd)
 
 
 def lichbd_export(src_path, dst_path):
     shellcmd = None
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd export %s %s -p %s 2>/dev/null' % (src_path, dst_path, proto)
     shellcmd = call_try(cmd)
     if shellcmd.return_code == 0:
@@ -224,8 +212,8 @@ def lichbd_export(src_path, dst_path):
     raise_exp(shellcmd)
 
 
-def lichbd_rm(path):
-    proto = get_proto()
+def lichbd_volume_delete(path):
+    proto = lichbd_get_proto()
     shellcmd = call_try('lichbd rm %s -p %s 2>/dev/null' % (path, proto))
     if shellcmd.return_code != 0:
         if shellcmd.return_code == errno.ENOENT:
@@ -234,18 +222,18 @@ def lichbd_rm(path):
             raise_exp(shellcmd)
 
 
-def lichbd_mv(dist, src):
-    proto = get_proto()
+def lichbd_volume_rename(dist, src):
+    proto = lichbd_get_proto()
     cmd = 'lichbd mv %s %s -p %s 2>/dev/null' % (src, dist, proto)
     shellcmd = call_try(cmd)
     if shellcmd.return_code != 0:
         raise_exp(shellcmd)
 
 
-def lichbd_flatten(path):
+def lichbd_volume_flatten(path):
     # todo flatten
     return None
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lich.inspect flat %s 2>/dev/null' % ("%s/%s" % (proto, path))
     shellcmd = call_try(cmd)
     if shellcmd.return_code != 0:
@@ -253,14 +241,14 @@ def lichbd_flatten(path):
 
 
 def lichbd_volume_info(path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     shellcmd = call_try("lichbd info %s -p %s" % (path, proto))
 
     return shellcmd.stdout.strip()
 
 
-def lichbd_file_size(path):
-    proto = get_proto()
+def lichbd_volume_size(path):
+    proto = lichbd_get_proto()
     cmd1 = "lichbd info %s -p %s 2>/dev/null" % (path, proto)
     cmd2 = " | grep chknum | awk '{print $3}'"
     cmd = cmd1 + cmd2
@@ -272,8 +260,12 @@ def lichbd_file_size(path):
     return long(size) * 1024 * 1024
 
 
+def lichbd_volume_stat(path):
+    return {}
+
+
 def lichbd_file_actual_size(path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd1 = "lichbd info %s -p %s 2>/dev/null" % (path, proto)
     cmd2 = " | grep localized | awk '{print $3}'"
     cmd = cmd1 + cmd2
@@ -286,7 +278,7 @@ def lichbd_file_actual_size(path):
 
 
 def lichbd_volume_exist(path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     shellcmd = call_try("lichbd info %s -p %s" % (path, proto))
     if shellcmd.return_code != 0:
         if shellcmd.return_code == 2:
@@ -313,14 +305,14 @@ def lichbd_get_used():
             used = long(l.split("used:")[-1])
             return used
 
-    raise ShellError('lichbd_get_used')
+    raise LichbdError('lichbd_get_used')
 
 
 def lichbd_get_capacity():
     try:
         o = lichbd_cluster_stat()
     except Exception:
-        raise ShellError('lichbd_get_capacity')
+        raise LichbdError('lichbd_get_capacity')
 
     total = 0
     used = 0
@@ -334,7 +326,7 @@ def lichbd_get_capacity():
 
 
 def lichbd_snap_create(snap_path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     shellcmd = call_try('lichbd snap create %s -p %s' % (snap_path, proto))
     if shellcmd.return_code != 0:
         raise_exp(shellcmd)
@@ -344,7 +336,7 @@ def lichbd_snap_create(snap_path):
 
 def lichbd_snap_list(image_path):
     snaps = []
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd snap ls %s -p %s 2>/dev/null' % (image_path, proto)
     shellcmd = call_try(cmd)
     if shellcmd.return_code != 0:
@@ -365,7 +357,7 @@ def lichbd_snap_exist(snap_path):
 
 
 def lichbd_snap_delete(snap_path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd snap remove %s -p %s' % (snap_path, proto)
     shellcmd = call_try(cmd)
 
@@ -380,7 +372,7 @@ def lichbd_snap_delete(snap_path):
 
 
 def lichbd_snap_clone(src, dst):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd clone %s %s -p %s' % (src, dst, proto)
     shellcmd = call_try(cmd)
 
@@ -391,7 +383,7 @@ def lichbd_snap_clone(src, dst):
 
 
 def lichbd_snap_rollback(snap_path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd snap rollback %s -p %s' % (snap_path, proto)
     shellcmd = call_try(cmd)
 
@@ -402,7 +394,7 @@ def lichbd_snap_rollback(snap_path):
 
 
 def lichbd_snap_protect(snap_path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd snap protect %s -p %s' % (snap_path, proto)
     shellcmd = call_try(cmd)
 
@@ -413,7 +405,7 @@ def lichbd_snap_protect(snap_path):
 
 
 def lichbd_snap_unprotect(snap_path):
-    proto = get_proto()
+    proto = lichbd_get_proto()
     cmd = 'lichbd snap unprotect %s -p %s' % (snap_path, proto)
     shellcmd = call_try(cmd)
 

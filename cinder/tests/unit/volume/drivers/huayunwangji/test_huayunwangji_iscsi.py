@@ -19,30 +19,24 @@ import ddt
 
 import mock
 
+from cinder import context
 from cinder import test
+from cinder.tests.unit import fake_snapshot
+from cinder.tests.unit import fake_volume
 from cinder.volume import configuration as conf
 
 import cinder.volume.drivers.huayunwangji.huayunwangji_iscsi as driver
 from cinder.volume.drivers.huayunwangji import lichbd
 
-test_volume = {
-    'name': 'volume-41319c5d-b94d-4fca-a5e6-553da0fe0940',
-    'size': 1,
-    'volume_name': 'vol1',
-    'id': '41319c5d-b94d-4fca-a5e6-553da0fe0940',
-    'volume_id': '41319c5d-b94d-4fca-a5e6-553da0fe0940',
-    'provider_auth': None,
-    'project_id': 'project',
-    'display_name': 'vol1',
-    'display_description': 'test volume',
-    'volume_type_id': None,
-    'host': 'controller',
-    'provider_location': '',
-    'status': 'available',
-    'admin_metadata': {},
-}
-
 LICHBD = "cinder.volume.drivers.huayunwangji.lichbd"
+mock_lichbd = mock.patch(LICHBD)
+
+def get_shellcmd(cmd, return_code, stdout, stderr):
+    shellcmd = lichbd.ShellCmd(cmd)
+    shellcmd.return_code = return_code
+    shellcmd.stdout = stdout
+    shellcmd.stderr = stderr
+    return shellcmd
 
 
 @ddt.ddt
@@ -52,40 +46,47 @@ class HuayunwangjiISCSIDriverTestCase(test.TestCase):
         super(HuayunwangjiISCSIDriverTestCase, self).setUp()
         self.cfg = mock.Mock(spec=conf.Configuration)
 
-        self.cfg.vip = '192.168.120.38'
-        self.cfg.iqn = 'iqn.2001-04-123.com.fusionstack'
-        self.manager_host = "192.168.120.38"
+        self.cfg.huayunwangji_vip = '192.168.120.38'
+        self.cfg.huayunwangji_iqn = 'iqn.2001-04-123.com.fusionstack'
+        self.cfg.huayunwangji_manager_host = "192.168.120.38"
 
         mock_exec = mock.Mock()
         mock_exec.return_value = ('', '')
         self.driver = driver.HuayunwangjiISCSIDriver(execute=mock_exec,
                                                      configuration=self.cfg)
         self.driver.set_initialized()
-        # mock_create = mock.MagicMock(return_value=0)
-        # mock.patch("lichbd.lichbd_pool_exist", mock_pool_exist)
+        self.driver.lichbd = mock_lichbd
+
+        self.context = context.get_admin_context()
+
+        self.volume_a = fake_volume.fake_volume_obj(
+            self.context,
+            **{'name': u'volume-0000000a',
+               'id': '4c39c3c7-168f-4b32-b585-77f1b3bf0a38',
+               'size': 10})
+
+        self.volume_b = fake_volume.fake_volume_obj(
+            self.context,
+            **{'name': u'volume-0000000b',
+               'id': '0c7d1f44-5a06-403f-bb82-ae7ad0d693a6',
+               'size': 10})
+
+        self.snapshot = fake_snapshot.fake_snapshot_obj(
+            self.context, name='snapshot-0000000a')
 
     def test_create_volume_success(self):
-        # mock_mkpool = mock.MagicMock(return_value=0)
-        mock_create = mock.MagicMock(return_value=0)
-        mock_pool_exist = mock.MagicMock(return_value=True)
-        # mock_volume_exist = mock.MagicMock(return_value=False)
+        def _success(cmd):
+            print 'fuck'
+            return get_shellcmd(cmd, 0, "stdout", "stderr")
 
-        with mock.patch("%s.lichbd_pool_exist" % (LICHBD), mock_pool_exist):
-            with mock.patch("%s.lichbd_create" % (LICHBD), mock_create):
-                self.driver.create_volume(test_volume)
+        mock_lichbd.call_try = _success
+        mock_lichbd.lichbd_pool_exist.return_value = True
+        mock_lichbd.lichbd_volume_create.return_value = 0
+        self.driver.create_volume(self.volume_a)
 
-    def test_create_volume_fail(self):
-        # mock_mkpool = mock.MagicMock(return_value=0)
-        mock_create = mock.MagicMock(side_effect=lichbd.ShellError)
-        mock_pool_exist = mock.MagicMock(return_value=True)
-        # mock_volume_exist = mock.MagicMock(return_value=False)
-
-        with mock.patch("%s.lichbd_pool_exist" % (LICHBD), mock_pool_exist):
-            with mock.patch("%s.lichbd_create" % (LICHBD), mock_create):
-                self.driver.create_volume(test_volume)
-                self.assertRaises(lichbd.ShellError,
-                                  self.driver.create_volume,
-                                  test_volume)
-
-# from cinder.tests.unit import utils
-# from cinder.volume.flows.manager import create_volume
+    @mock.patch(LICHBD)
+    def test_create_volume_fail(self, mock_lichbd):
+        mock_lichbd.lichbd_pool_exist.return_value = True
+        mock_lichbd.lichbd_volume_create.side_effect = lichbd.ShellError
+        self.assertRaises(lichbd.ShellError,
+                          self.driver.create_volume, self.volume_a)
