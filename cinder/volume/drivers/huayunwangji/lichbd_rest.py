@@ -17,6 +17,7 @@
 # import errno
 # import subprocess
 # import time
+import json
 
 from cinder.i18n import _LE
 # from cinder.i18n import _, _LW, _LE, _LI
@@ -53,6 +54,7 @@ def raise_exp(resp, message=None):
 
 def check_resp(resp):
     if not resp.ok():
+        LOG.error(resp)
         raise_exp(resp, 'not ok')
 
 
@@ -66,32 +68,34 @@ def __lichbd_get_cluster():
         raise_exp(resp, "cluster not only")
 
     check_resp(resp)
-    return resp.records[0]
+    cluster = resp.records[0]
+    cluster.update({"config_dict": json.loads(cluster["config_str"])})
+    return cluster
 
 
 def lichbd_get_iqn():
     cluster = __lichbd_get_cluster()
-    return cluster["config_str"]["iscsi.iqn"]
+    return cluster["config_dict"]["iscsi.iqn"]
 
 
 def lichbd_get_vip():
     cluster = __lichbd_get_cluster()
-    return cluster["config_str"]["iscsi.vip"]
+    return cluster["config_dict"]["iscsi.vip"]
 
 
 def lichbd_get_port():
     cluster = __lichbd_get_cluster()
-    return cluster["config_str"]["iscsi.port"]
+    return cluster["config_dict"]["iscsi.port"]
 
 
 def lichbd_get_used():
-    # todo
-    return 1000
+    cluster = __lichbd_get_cluster()
+    return long(cluster["disk_used"]) / (1024 ** 3)
 
 
 def lichbd_get_capacity():
-    # todo
-    return 1000
+    cluster = __lichbd_get_cluster()
+    return cluster["disk_total_gb"]
 
 
 def lichbd_pool_creat(path):
@@ -120,14 +124,12 @@ def lichbd_pool_delete(path):
 
 
 def lichbd_volume_create(path, size):
-    size = "%sB" % (size * 1024 * 1024 * 1024)
     _, resp = volumem.create(path, size,
                              protocol='iscsi', provisioning='thin')
     check_resp(resp)
 
 
 def lichbd_volume_resize(path, size):
-    size = "%sB" % (size * 1024 * 1024 * 1024)
     _, resp = volumem.resize(path, size, protocol='iscsi')
     check_resp(resp)
 
@@ -141,30 +143,25 @@ def lichbd_volume_delete(path):
 
 
 def lichbd_volume_rename(dist, src):
-    raise
+    raise Exception("unsupport")
     # _, resp = volumem.rename(name, protocol='iscsi')
     # check_resp(resp)
 
 
 def lichbd_volume_flatten(path):
-    # todo flatten
-    raise
     _, resp = volumem.flatten(path, protocol='iscsi')
     check_resp(resp)
 
 
 def lichbd_volume_stat(path):
     """size =  stat['size_gb']
-    source = stat["source"] "/iscsi/zz/0@snap001"
+    'source_snapshot': u'/iscsi/cinder:zxdd/volume_of_zxdd_for_snap@snap1'
+    'iqn': u'iqn.2016-09-4821.com.huayunwangji:cinder:asdfxxd.volume_of_asdfxxd'
     """
     _, resp = volumem.stat(path, protocol='iscsi')
     check_resp(resp)
     stat = resp.records
     return stat
-
-
-def lichbd_volume_clone_depth(path):
-    return 0
 
 
 def lichbd_volume_exist(path):
@@ -180,22 +177,18 @@ def lichbd_volume_exist(path):
 
 
 def lichbd_volume_copy(src, dst):
+    raise Exception("unsupport, please set max_clone_depth > 0")
     _, resp = volumem.copy(src, dst, protocol='iscsi')
     check_resp(resp)
 
 
 def lichbd_snap_create(snap_path):
-    volume = snap_path.split('@')[0]
-    snap = snap_path.split('@')[1]
-    _, resp = snapshotm.create(volume, snap, protocol='iscsi')
+    _, resp = snapshotm.create(snap_path, protocol='iscsi')
     check_resp(resp)
 
 
 def lichbd_snap_exist(snap_path):
-    image_path = snap_path.split("@")[0]
-    snap = snap_path.split("@")[1]
-
-    _, resp = snapshotm.stat(image_path, snap, protocol='iscsi')
+    _, resp = snapshotm.stat(snap_path, protocol='iscsi')
     if resp.status_code == 404:
         return False
 
@@ -207,10 +200,7 @@ def lichbd_snap_exist(snap_path):
 
 
 def lichbd_snap_delete(snap_path):
-    image_path = snap_path.split("@")[0]
-    snap = snap_path.split("@")[1]
-
-    _, resp = snapshotm.delete(image_path, snap, protocol='iscsi')
+    _, resp = snapshotm.delete(snap_path, protocol='iscsi')
     if resp.status_code == 404:
         return None
 
@@ -229,57 +219,53 @@ def lichbd_snap_list(image_path):
 
 
 def lichbd_snap_clone(src, dst):
-    image_path = src.split("@")[0]
-    snap = src.split("@")[1]
-    _, resp = snapshotm.clone(image_path, snap, dst, protocol='iscsi')
+    _, resp = snapshotm.clone(src, dst, protocol='iscsi')
     check_resp(resp)
 
 
 def lichbd_snap_protect(snap_path):
-    image_path = snap_path.split("@")[0]
-    snap = snap_path.split("@")[1]
-
-    _, resp = snapshotm.protect(image_path, snap,
-                                is_protect=True, protocol='iscsi')
+    _, resp = snapshotm.protect(snap_path, is_protect=True, protocol='iscsi')
     check_resp(resp)
 
 
 def lichbd_snap_unprotect(snap_path):
-    image_path = snap_path.split("@")[0]
-    snap = snap_path.split("@")[1]
-
-    _, resp = snapshotm.protect(image_path, snap,
-                                is_protect=False, protocol='iscsi')
+    _, resp = snapshotm.protect(snap_path, is_protect=False, protocol='iscsi')
     check_resp(resp)
 
 
 def lichbd_cg_create(group_name):
+    raise Exception("unsupport")
     pass
 
 
 def lichbd_cg_delete(group_name):
+    raise Exception("unsupport")
     pass
 
 
 def lichbd_cg_add_volume(group_name, volumes):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
+    raise Exception("unsupport")
     pass
 
 
 def lichbd_cg_remove_volume(group_name, volumes):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
+    raise Exception("unsupport")
     return None
 
 
 def lichbd_cgsnapshot_create(group_name, snapshot_name):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
+    raise Exception("unsupport")
     return None
 
 
 def lichbd_cgsnapshot_delete(group_name, snapshot_name):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
+    raise Exception("unsupport")
     return None

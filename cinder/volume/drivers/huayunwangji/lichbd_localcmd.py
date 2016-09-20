@@ -113,6 +113,8 @@ def lichbd_get_iqn():
     iqn = shellcmd.stdout.strip()
     return iqn
 
+def lichbd_get_vip():
+    raise
 
 def lichbd_pool_creat(path):
     proto = lichbd_get_proto()

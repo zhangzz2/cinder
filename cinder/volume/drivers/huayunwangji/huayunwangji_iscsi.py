@@ -56,12 +56,6 @@ huayunwangji_iscsi_opts = [
                default="localhost",
                help='Default the manager host of fusionstor. '
                     '(Default is localhost.)'),
-    cfg.StrOpt('huayunwangji_vip',
-               default="localhost",
-               help='Default the vip of fusionstor. '),
-    cfg.StrOpt('huayunwangji_iqn',
-               default="",
-               help='Default the iqn of fusionstor. '),
     cfg.StrOpt('huayunwangji_port',
                default="3260",
                help='Default the iqn of fusionstor. '),
@@ -101,18 +95,14 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         if (getattr(self.configuration, 'huayunwangji_client') == 'rest'):
             self.lichbd = lichbd_rest
-            self.vip = self.lichbd.lichbd_get_vip()
-            self.iqn = self.lichbd.lichbd_get_iqn()
-            self.port = self.lichbd.lichbd_get_port()
-            self.proto = self.lichbd.lichbd_get_proto()
-            LOG.info(_LI("huayunwangji_client use rest"))
         else:
             self.lichbd = lichbd_localcmd
-            self.vip = getattr(self.configuration, 'huayunwangji_vip')
-            self.iqn = getattr(self.configuration, 'huayunwangji_iqn')
-            self.port = getattr(self.configuration, 'huayunwangji_port')
-            self.proto = self.lichbd.lichbd_get_proto()
-            LOG.info(_LI("huayunwangji_client use localcmd"))
+
+        # self.vip = self.lichbd.lichbd_get_vip()
+        self.vip = '192.168.120.211'
+        self.port = self.lichbd.lichbd_get_port()
+        self.proto = self.lichbd.lichbd_get_proto()
+        LOG.info(_LI("huayunwangji_client use rest"))
 
     def _update_volume_stats(self):
         data = {}
@@ -132,10 +122,12 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def check_for_setup_error(self):
         if not netutils.is_valid_ip(self.vip):
             msg = _('vip error: %s' % (self.vip))
+            LOG.error(_LE(msg))
             raise exception.VolumeBackendAPIException(data=msg)
 
         if not netutils.is_valid_port(self.port):
             msg = _('port error' % (self.port))
+            LOG.error(_LE(msg))
             raise exception.VolumeBackendAPIException(data=msg)
 
     def get_volume_stats(self, refresh=False):
@@ -173,11 +165,20 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def _id2pool(self, volume_id):
         return self.__name2pool((self.__id2name(volume_id)))
 
-    def _get_clone_depth(self, volume_name, depth=0):
+    def _get_source(self, path):
         parent = None
-        source = self.lichbd.lichbd_volume_stat(volume_name)['source']
-        if source:
-            parent = source.split("@")[0]
+        parent_snap = None
+
+        stat = self.lichbd.lichbd_volume_stat(path)
+        if stat['source_snapshot'].strip():
+            p = stat['source_snapshot'].split(":")[1]
+            parent = p.split('@')[0]
+            parent_snap = p
+
+        return parent, parent_snap
+
+    def _get_clone_depth(self, volume_name, depth=0):
+        parent, parent_snap = self._get_source(volume_name)
 
         if not parent:
             return depth
@@ -190,7 +191,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
     def _check_max_clone_depth(self, src_volume):
         depth = self._get_clone_depth(src_volume)
-        if depth == self.configuration.rbd_max_clone_depth:
+        if depth == self.configuration.huayunwangji_max_clone_depth:
             LOG.debug("maximum clone depth (%d) has been reached - "
                       "flattening source volume",
                       self.configuration.huayunwangji_max_clone_depth)
@@ -210,7 +211,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             LOG.debug("zz2 dir volume_type %s" % (dir(volume_type)))
             LOG.debug("zz2 volume_type %s" % (volume_type["name"]))
 
-        size = "%s%s" % (int(volume.size), 'Gi')
+        size = int(volume.size)
         pool = self._id2pool(volume.id)
         path = self._id2volume(volume.id)
 
@@ -390,33 +391,31 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         LOG.debug("resize volume '%s' to %s" % (volume.name, new_size))
         target = self._id2volume(volume.id)
-        size = "%sGi" % (new_size)
-        self.lichbd.lichbd_volume_resize(target, size)
+        self.lichbd.lichbd_volume_resize(target, new_size)
 
-    def _delete_clone_parent_refs(self, volume_path):
-        stat = self.lichbd.lichbd_volume_stat(volume_path)
-        src_snap = stat["source"]
-        parent = src_snap.split("@")[0]
-
+    def _delete_clone_parent_refs(self, path, src_snap):
         self.lichbd.lichbd_snap_unprotect(src_snap)
         self.lichbd.lichbd_snap_delete(src_snap)
 
-        parent_has_snaps = bool(self.lichbd.lichbd_snap_list(parent))
-        if (not parent_has_snaps) and parent.endswith(".deleted"):
-            self.lichbd.lichbd_volume_delete(parent)
-            if self.lichbd.lichbd_volume_stat(parent)["source"]:
-                self._delete_clone_parent_refs(parent)
+        has_snaps = bool(self.lichbd.lichbd_snap_list(path))
+        if (not has_snaps) and path.endswith(".deleted"):
+            parent, parent_snap = self._get_source(path)
+            self.lichbd.lichbd_volume_delete(path)
+            if parent:
+                self._delete_clone_parent_refs(parent, parent_snap)
 
     def delete_volume(self, volume):
         """Deletes a logical volume."""
         LOG.debug("delete volume '%s'", volume.name)
         path = self._id2volume(volume.id)
         used_clone = False
+        parent = None
+        parent_snap = None
 
         # # Ensure any backup snapshots are deleted
-        # self._delete_backup_snaps(rbd_image)
+        # self._delete_backup_snaps(path)
 
-        snaps = self.lichbd_snap_list(path)
+        snaps = self.lichbd.lichbd_snap_list(path)
         for s in snaps:
             if s.startswith('snapforclone-'):
                 used_clone = True
@@ -426,9 +425,10 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             new_name = "%s.deleted" % (path)
             self.lichbd.lichbd_volume_rename(path, new_name)
         else:
+            parent, parent_snap = self._get_source(path)
             self.lichbd.lichbd_volume_delete(path)
-            if self.lichbd.lichbd_volume_stat(path)["source"]:
-                self._delete_clone_parent_refs(path)
+            if parent:
+                self._delete_clone_parent_refs(parent, parent_snap)
 
     def retype(self, context, volume, new_type, diff, host):
         """Retypes a volume, allow Qos and extra_specs change."""
@@ -451,7 +451,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         # self.create_volume(volume)
 
-        iqn = "%s:%s.%s" % (self.iqn, self._id2pool(volume.id), volume.name)
+        iqn = self._get_iqn(self._id2volume(volume.id))
         location = "%s %s %s" % (self.vip + ':3260', iqn, 0)
         return {'provider_location': location,
                 'provider_auth': None, }
@@ -607,12 +607,14 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         return {'_name_id': name_id, 'provider_location': provider_location}
 
+    def _get_iqn(self, path):
+        stat = self.lichbd.lichbd_volume_stat(path)
+        return stat["iqn"]
+
     def _initialize_connection(self, volume):
         data = {}
         data["target_discovered"] = False
-        data["target_iqn"] = "%s:%s.%s" % (self.iqn,
-                                           self._id2pool(volume.id),
-                                           volume.name)
+        data["target_iqn"] = self._get_iqn(self._id2volume(volume.id))
         # data['target_lun'] = 0
         data["target_portal"] = "%s:%s" % (self.vip, self.port)
         data["volume_id"] = volume['id']

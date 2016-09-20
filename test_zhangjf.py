@@ -1,6 +1,8 @@
 #!/usr/bin/env python2
 #-*- coding: utf-8 -*-
 
+import json
+
 from fusionstor import ClusterManager, HostManager, PoolManager, \
         VolumeManager, SnapshotManager
 
@@ -17,6 +19,19 @@ if __name__ == "__main__":
     # pool test
     pool_name = sys.argv[1]
 
+    _, resp = clusterm.list()
+    print 'zz2---cluster --list---', resp
+    cluster = resp.records[0]
+    assert(len(resp.records) == 1)
+    print cluster["disk_used"]
+    print cluster["disk_total_gb"]
+    print cluster["config_str"]
+    config = json.loads(cluster["config_str"])
+    print type(cluster)
+    print type(cluster["config_str"])
+    print type(config)
+
+
     _, resp = poolm.create(pool_name, protocol='iscsi')
     print 'zz2---create---', resp
 
@@ -27,6 +42,9 @@ if __name__ == "__main__":
     print 'zz2---delete---', resp
 
     # volume test
+    _, resp = poolm.create(pool_name, protocol='iscsi')
+    print 'zz2---create---', resp
+
     size = "%sB" % (1*1024*1024*1024)
     vol_name = '%s/volume_of_%s' % (pool_name, pool_name)
 
@@ -35,6 +53,10 @@ if __name__ == "__main__":
 
     _, resp = volumem.stat(vol_name)
     print 'zz2---volume-stat---', resp
+    raise Exception("fuck")
+
+    _, resp = volumem.stat(vol_name + "xxx")
+    print 'zz2---404---volume-stat---', resp
 
     newsize = "%sB" % (2*1024*1024*1024)
     _, resp = volumem.resize(vol_name, 2, provisioning='thin', protocol='iscsi')
@@ -49,16 +71,26 @@ if __name__ == "__main__":
     _, resp = volumem.create(vol_name, 1, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-create---', resp
 
-    snap_name = 'snap1'
-    _, resp = snapshotm.create(vol_name, snap_name,  protocol='iscsi')
+    snap_path = "%s@%s"% (vol_name, 'snap1')
+    _, resp = snapshotm.create(snap_path,  protocol='iscsi')
     print 'zz2---snap-create---', resp
 
     _, resp = volumem.list_snapshots(vol_name, protocol='iscsi')
     print 'zz2---snap-list---', resp
     print 'zz2---snap-list---', resp.records
+
+    _, resp = volumem.list_snapshots(vol_name, protocol='iscsi')
+    print 'zz2---snap-list---', resp
+    print 'zz2---snap-list---', resp.records
+
+    vol_name_2 = vol_name + "clone"
+    _, resp = snapshotm.clone(snap_path, vol_name_2, protocol='iscsi')
+
+    _, resp = volumem.stat(vol_name_2)
+    print 'zz2---volume-stat---', resp
     raise Exception('fuck')
 
-    _, resp = snapshotm.stat(vol_name, snap_name,  protocol='iscsi')
+    _, resp = snapshotm.stat(snap_path,  protocol='iscsi')
     print 'zz2---snap-stat--', resp
 
     vol_name_clone = '%s/volume_of_%s_for_snap_clone' % (pool_name, pool_name)
