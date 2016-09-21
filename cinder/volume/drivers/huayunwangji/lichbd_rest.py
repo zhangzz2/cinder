@@ -124,12 +124,14 @@ def lichbd_pool_delete(path):
 
 
 def lichbd_volume_create(path, size):
+    size = int(size) * (1024 ** 3)
     _, resp = volumem.create(path, size,
                              protocol='iscsi', provisioning='thin')
     check_resp(resp)
 
 
 def lichbd_volume_resize(path, size):
+    size = int(size) * (1024 ** 3)
     _, resp = volumem.resize(path, size, protocol='iscsi')
     check_resp(resp)
 
@@ -156,7 +158,8 @@ def lichbd_volume_flatten(path):
 def lichbd_volume_stat(path):
     """size =  stat['size_gb']
     'source_snapshot': u'/iscsi/cinder:zxdd/volume_of_zxdd_for_snap@snap1'
-    'iqn': u'iqn.2016-09-4821.com.huayunwangji:cinder:asdfxxd.volume_of_asdfxxd'
+    'iqn': u'iqn.2016-09-4821.com.huayunwangji
+           :cinder:asdfxxd.volume_of_asdfxxd'
     """
     _, resp = volumem.stat(path, protocol='iscsi')
     check_resp(resp)

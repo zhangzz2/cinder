@@ -150,20 +150,16 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         return volume_type
 
-    def __id2name(self, volume_id):
-        return "volume-%s" % (volume_id)
+    def _get_volume(self, volume):
+        return '%s/%s' % (volume.user_id, volume.id)
 
-    def __name2pool(self, name):
-        return name[:11]
+    def _get_pool(self, volume):
+        return '%s' % (volume.user_id)
 
-    def __name2volume(self, name):
-        return '%s/%s' % (self.__name2pool(name), name)
-
-    def _id2volume(self, volume_id):
-        return self.__name2volume((self.__id2name(volume_id)))
-
-    def _id2pool(self, volume_id):
-        return self.__name2pool((self.__id2name(volume_id)))
+    def _get_volume_by_id(self, volume_id):
+        ctx = context.get_admin_context()
+        v = self.db.volume_get(ctx, volume_id)
+        return self._get_volume(v)
 
     def _get_source(self, path):
         parent = None
@@ -212,8 +208,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             LOG.debug("zz2 volume_type %s" % (volume_type["name"]))
 
         size = int(volume.size)
-        pool = self._id2pool(volume.id)
-        path = self._id2volume(volume.id)
+        pool = self._get_pool(volume)
+        path = self._get_volume(volume)
 
         if not self.lichbd.lichbd_pool_exist(pool):
             self.lichbd.lichbd_pool_creat(pool)
@@ -230,9 +226,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def create_cloned_volume(self, volume, src_vref):
         LOG.debug("create cloned volume '%s' src_vref %s", volume, src_vref)
 
-        target_pool = self._id2pool(volume.id)
-        target_volume = self._id2volume(volume.id)
-        src_volume = self._id2volume(src_vref['id'])
+        target_pool = self._get_pool(volume)
+        target_volume = self._get_volume(volume)
+        src_volume = self._get_volume_by_id(src_vref['id'])
 
         if not self.lichbd.lichbd_pool_exist(target_pool):
             self.lichbd.lichbd_pool_creat(target_pool)
@@ -259,7 +255,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         # self.lichbd.lichbd_snap_delete(snapshot)
 
         if (volume.size > src_vref.size):
-            size = "%sGi" % (volume.size)
+            size = volume.size
             self.lichbd.lichbd_volume_truncate(target_volume, size)
 
         if (volume.get('consistencygroup_id')):
@@ -278,14 +274,14 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         if image_location:
             volume_id = image_location[0].split("//")[-1]
-            snapshot = "%s@%s" % (self._id2volume(volume_id), volume_id)
+            snapshot = "%s@%s" % (self._get_volume_by_id(volume_id), volume_id)
             if not self.lichbd.lichbd_snap_exist(snapshot):
                 self.lichbd.lichbd_snap_create(snapshot)
 
-            pool = self._id2pool(volume.id)
+            pool = self._get_pool(volume)
             if not self.lichbd.lichbd_pool_exist(pool):
                 self.lichbd.lichbd_pool_creat(pool)
-            target = self._id2volume(volume.id)
+            target = self._get_volume(volume)
             self.lichbd.lichbd_snap_clone(snapshot, target)
 
             return {'provider_location': None}, True
@@ -340,7 +336,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         if (volume.get('consistencygroup_id')):
             group_name = volume['consistencygroup_id']
-            path = self._id2volume(volume['id'])
+            path = self._get_volume(volume)
             self.lichbd.lichbd_cg_add_volume(group_name, [path])
 
     def backup_volume(self, context, backup, backup_service):
@@ -383,14 +379,15 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             image_utils.upload_volume(context,
                                       image_service, image_meta, by_path)
         except Exception:
-            self._makesure_logout(volume)
             raise
+        finally:
+            self._makesure_logout(volume)
 
     def extend_volume(self, volume, new_size):
         """Extend an existing volume."""
 
         LOG.debug("resize volume '%s' to %s" % (volume.name, new_size))
-        target = self._id2volume(volume.id)
+        target = self._get_volume(volume)
         self.lichbd.lichbd_volume_resize(target, new_size)
 
     def _delete_clone_parent_refs(self, path, src_snap):
@@ -407,7 +404,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def delete_volume(self, volume):
         """Deletes a logical volume."""
         LOG.debug("delete volume '%s'", volume.name)
-        path = self._id2volume(volume.id)
+        path = self._get_volume(volume)
         used_clone = False
         parent = None
         parent_snap = None
@@ -451,7 +448,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         # self.create_volume(volume)
 
-        iqn = self._get_iqn(self._id2volume(volume.id))
+        iqn = self._get_iqn(self._get_volume(volume))
         location = "%s %s %s" % (self.vip + ':3260', iqn, 0)
         return {'provider_location': location,
                 'provider_auth': None, }
@@ -486,10 +483,10 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
     def _get_snap_path(self, snapshot):
         if snapshot.get('cgsnapshot_id'):
-            snap_path = "%s@%s" % (self._id2volume(snapshot.volume_id),
+            snap_path = "%s@%s" % (self._get_volume_by_id(snapshot.volume_id),
                                    self._get_cgsnap_name(snapshot.cgsnapshot))
         else:
-            snap_path = "%s@%s" % (self._id2volume(snapshot.volume_id),
+            snap_path = "%s@%s" % (self._get_volume_by_id(snapshot.volume_id),
                                    snapshot.id)
         return snap_path
 
@@ -498,8 +495,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         LOG.debug("create volume from a snapshot")
 
         snap_path = self._get_snap_path(snapshot)
-        target_pool = self._id2pool(volume.id)
-        target_volume = self._id2volume(volume.id)
+        target_pool = self._get_pool(volume)
+        target_volume = self._get_volume(volume)
 
         if not self.lichbd.lichbd_pool_exist(target_pool):
             self.lichbd.lichbd_pool_creat(target_pool)
@@ -510,7 +507,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             self.lichbd.lichbd_volume_flatten(target_volume)
 
         if (volume.size > snapshot.volume_size):
-            size = "%sGi" % (volume.size)
+            size = volume.size
             self.lichbd.lichbd_volume_truncate(target_volume, size)
 
         if (volume.get('consistencygroup_id')):
@@ -522,8 +519,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             {'source-name': <pool_name/volume_name>}
         """
         src_path = existing_ref['source-name']
-        dst_path = self._id2volume(volume.id)
-        dst_pool = self._id2pool(volume.id)
+        dst_path = self._get_volume(volume)
+        dst_pool = self._get_pool(volume)
 
         if not self.lichbd.lichbd_pool_exist(dst_pool):
             self.lichbd.lichbd_pool_creat(dst_pool)
@@ -587,9 +584,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         name_id = None
         provider_location = None
 
-        src_path = self._id2volume(new_volume.id)
-        dst_path = self._id2volume(volume.id)
-        dst_pool = self._id2pool(volume.id)
+        src_path = self._get_volume(new_volume)
+        dst_path = self._get_volume(volume)
+        dst_pool = self._get_pool(volume)
 
         if not self.lichbd.lichbd_pool_exist(dst_pool):
             self.lichbd.lichbd_pool_creat(dst_pool)
@@ -614,7 +611,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def _initialize_connection(self, volume):
         data = {}
         data["target_discovered"] = False
-        data["target_iqn"] = self._get_iqn(self._id2volume(volume.id))
+        data["target_iqn"] = self._get_iqn(self._get_volume(volume))
         # data['target_lun'] = 0
         data["target_portal"] = "%s:%s" % (self.vip, self.port)
         data["volume_id"] = volume['id']
@@ -648,6 +645,17 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         LOG.debug("terminate connection kwargs : %s" % (kwargs))
         pass
 
+    def _run_iscsiadm(self, iscsi_properties, iscsi_command, **kwargs):
+        check_exit_code = kwargs.pop('check_exit_code', 0)
+        (out, err) = utils.execute('iscsiadm', '-m', 'node', '-T',
+                                   iscsi_properties['target_iqn'],
+                                   '-p', iscsi_properties['target_portal'],
+                                   *iscsi_command, run_as_root=True,
+                                   check_exit_code=check_exit_code)
+        LOG.debug("iscsiadm %(command)s: stdout=%(out)s stderr=%(err)s",
+                  {'command': iscsi_command, 'out': out, 'err': err})
+        return (out, err)
+
     def _makesure_login(self, volume):
         """
         /dev/disk/by-path/
@@ -655,34 +663,45 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         :volume-37bf.volume-37bf545f-0cfa-4361-a4bc-eda3f6d30809-lun-0
         """
 
-        self.ensure_export(context, volume)
+        ctx = context.get_admin_context()
+        self.ensure_export(ctx, volume)
 
         connection = self._initialize_connection(volume)
         iscsi_properties = connection["data"]
 
         x = iscsi_properties
         by_path = "/dev/disk/by-path"
-        f = "ip-%s-iscsi-%s-lun-0" % (x["target_portal"], x["iqn"])
+        f = "ip-%s-iscsi-%s-lun-0" % (x["target_portal"], x["target_iqn"])
         by_path = os.path.join(by_path, f)
 
         iscsi_command = ('--op', 'new', '--interface', 'default')
         self._run_iscsiadm(iscsi_properties, iscsi_command)
 
         retry_max = 30
+        find = False
         while (retry_max > 0):
-            iscsi_command = ('--login')
+            iscsi_command = ('--login',)
             self._run_iscsiadm(iscsi_properties, iscsi_command)
 
-            if os.path.islink(by_path):
+            for i in range(10):
+                if os.path.islink(by_path):
+                    find = True
+                    break
+                time.sleep(1)
+
+            if find:
                 break
 
-            iscsi_command = ('--logout')
+            iscsi_command = ('--logout',)
             self._run_iscsiadm(iscsi_properties, iscsi_command)
 
             LOG.warning(_LW('Failed to login volume %s, retry: %s') % (
                 iscsi_properties, retry_max))
             retry_max = retry_max - 1
             time.sleep(3)
+
+        if not find:
+            raise Exception('fail login')
 
         return by_path
 
@@ -692,12 +711,12 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         x = iscsi_properties
         by_path = "/dev/disk/by-path"
-        f = "ip-%s-iscsi-%s-lun-0" % (x["target_portal"], x["iqn"])
+        f = "ip-%s-iscsi-%s-lun-0" % (x["target_portal"], x["target_iqn"])
         by_path = os.path.join(by_path, f)
 
         retry_max = 30
         while (retry_max > 0):
-            iscsi_command = ('--logout')
+            iscsi_command = ('--logout',)
             self._run_iscsiadm(iscsi_properties, iscsi_command)
 
             if not os.path.islink(by_path):
@@ -758,8 +777,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         add_volumes = add_volumes if add_volumes else []
         remove_volumes = remove_volumes if remove_volumes else []
 
-        add_volumes = [self._id2volume(x['id']) for x in add_volumes]
-        remove_volumes = [self._id2volume(x['id']) for x in remove_volumes]
+        add_volumes = [self._get_volume(x) for x in add_volumes]
+        remove_volumes = [self._get_volume(x) for x in remove_volumes]
         group_name = group['id']
 
         if add_volumes:
@@ -799,19 +818,24 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             self.lichbd.lichbd_cgsnapshot_create(source_cg['id'], snap_name)
 
             for volume, src_vol in zip(volumes, source_vols):
-                src = "%s@%s" % (self._id2volume(src_vol["id"]), snap_name)
-                dst = self._id2volume(volume['id'])
+                src = "%s@%s" % (self._get_volume_by_id(src_vol["id"]),
+                                 snap_name)
+                dst = self._get_volume(volume)
                 self.lichbd.lichbd_snap_clone(src, dst)
                 self.lichbd.lichbd_volume_flatten(dst)
 
                 if volume["size"] > src_vol["size"]:
-                    size = "%sGi" % (volume.size)
+                    size = volume.size
                     self.lichbd.lichbd_volume_truncate(dst, size)
 
             self.lichbd.lichbd_cgsnapshot_delete(source_cg['id'], snap_name)
 
         self.lichbd.lichbd_cg_create(group['id'])
-        paths = [self._id2volume(x) for x in volumes]
+        paths = [self._get_volume(x) for x in volumes]
         self.lichbd.lichbd_cg_add_volume(group['id'], paths)
 
         return None, None
+
+    def accept_transfer(self, context, volume, new_user, new_project):
+        """Accept the transfer of a volume for a new user/project."""
+        pass
