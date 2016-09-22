@@ -838,4 +838,14 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
     def accept_transfer(self, context, volume, new_user, new_project):
         """Accept the transfer of a volume for a new user/project."""
-        pass
+        src_path = self._get_volume(volume)
+
+        volume.user_id = new_user
+        volume.project_id = new_project
+        dst_pool = self._get_pool(volume)
+        dst_path = self._get_volume(volume)
+
+        if not self.lichbd.lichbd_pool_exist(dst_pool):
+            self.lichbd.lichbd_pool_creat(dst_pool)
+
+        self.lichbd.lichbd_volume_rename(src_path, dst_path)
