@@ -4,8 +4,10 @@
 import json
 
 from fusionstor import ClusterManager, HostManager, PoolManager, \
-        VolumeManager, SnapshotManager
+        VolumeManager, SnapshotManager, config
 
+print 'ump_init'
+config.init_ump("192.168.251.33")
 clusterm = ClusterManager()
 hostm = HostManager()     
 poolm = PoolManager()
@@ -15,6 +17,7 @@ snapshotm = SnapshotManager()
 if __name__ == "__main__":
     print 'xxx <pool_name>'
     import sys
+
 
     # pool test
     pool_name = sys.argv[1]

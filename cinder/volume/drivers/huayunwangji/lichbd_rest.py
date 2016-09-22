@@ -31,11 +31,11 @@ LOG = logging.getLogger(__name__)
 
 # https://wiki.openstack.org/wiki/Cinder/how-to-contribute-a-driver
 
-clusterm = fusionstor.ClusterManager()
-hostm = fusionstor.HostManager()
-poolm = fusionstor.PoolManager()
-volumem = fusionstor.VolumeManager()
-snapshotm = fusionstor.SnapshotManager()
+clusterm = None
+hostm = None
+poolm = None
+volumem = None
+snapshotm = None
 
 
 def raise_exp(resp, message=None):
@@ -53,8 +53,9 @@ def raise_exp(resp, message=None):
 
 
 def check_resp(resp):
+    LOG.debug(resp)
     if not resp.ok():
-        LOG.error(resp)
+        LOG.error(_LE(resp))
         raise_exp(resp, 'not ok')
 
 
@@ -64,6 +65,7 @@ def lichbd_get_proto():
 
 def __lichbd_get_cluster():
     _, resp = clusterm.list()
+    LOG.error(_LE(resp))
     if (len(resp.records) != 1):
         raise_exp(resp, "cluster not only")
 
@@ -272,3 +274,21 @@ def lichbd_cgsnapshot_delete(group_name, snapshot_name):
     '''
     raise Exception("unsupport")
     return None
+
+
+def lichbd_init(host, port):
+    fusionstor.config.init_ump(host, port)
+
+    # LOG.error(_LE("%s %s" % (host, port)))
+
+    global clusterm
+    global hostm
+    global poolm
+    global volumem
+    global snapshotm
+
+    clusterm = fusionstor.ClusterManager()
+    hostm = fusionstor.HostManager()
+    poolm = fusionstor.PoolManager()
+    volumem = fusionstor.VolumeManager()
+    snapshotm = fusionstor.SnapshotManager()

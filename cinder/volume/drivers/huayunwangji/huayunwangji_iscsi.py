@@ -52,12 +52,12 @@ from cinder.volume.drivers.huayunwangji.lichbd_common import LichbdError
 LOG = logging.getLogger(__name__)
 
 huayunwangji_iscsi_opts = [
-    cfg.StrOpt('huayunwangji_manager_host',
+    cfg.StrOpt('huayunwangji_rest_host',
                default="localhost",
                help='Default the manager host of fusionstor. '
                     '(Default is localhost.)'),
-    cfg.StrOpt('huayunwangji_port',
-               default="3260",
+    cfg.StrOpt('huayunwangji_rest_port',
+               default="27914",
                help='Default the iqn of fusionstor. '),
     cfg.StrOpt('huayunwangji_client',
                default="rest",
@@ -98,8 +98,11 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         else:
             self.lichbd = lichbd_localcmd
 
-        # self.vip = self.lichbd.lichbd_get_vip()
-        self.vip = '192.168.120.211'
+        host = getattr(self.configuration, 'huayunwangji_rest_host')
+        port = getattr(self.configuration, 'huayunwangji_rest_port')
+        self.lichbd.lichbd_init(host, port)
+        self.vip = self.lichbd.lichbd_get_vip()
+        # self.vip = "192.168.120.211"
         self.port = self.lichbd.lichbd_get_port()
         self.proto = self.lichbd.lichbd_get_proto()
         LOG.info(_LI("huayunwangji_client use rest"))
@@ -449,7 +452,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         # self.create_volume(volume)
 
         iqn = self._get_iqn(self._get_volume(volume))
-        location = "%s %s %s" % (self.vip + ':3260', iqn, 0)
+        location = "%s:%s %s %s" % (self.vip, self.port, iqn, 0)
         return {'provider_location': location,
                 'provider_auth': None, }
 
