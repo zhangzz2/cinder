@@ -4,12 +4,15 @@
 import time
 import uuid
 
-from cinder.volume.drivers.huayunwangji.lichbd_localcmd import call_try
+from cinder.volume.drivers.huayunwangji.lichbd_localcmd import call_try, raise_exp
 
 def call_assert(cmd, return_code = None):
     shellcmd = call_try(cmd, try_num=1)
-    if return_code:
+    if return_code is not None:
         if (shellcmd.return_code != return_code):
+            print shellcmd.process.returncode
+            print shellcmd.stdout
+            print shellcmd.stderr
             raise_exp(shellcmd)
     return shellcmd
 
@@ -93,12 +96,12 @@ def test_volume_2():
 
 def test_volume_1():
     # ==============
-    print 'create image'
     image_file = '/root/fake_tmp_image'
-    for i in range(1024):
+    for i in range(10):
         cmd = "echo %s > %s" % ('test'*1024, image_file)
         call_assert(cmd, 0)
 
+    print 'create image'
     image_name = "test_image" + uuid.uuid4().__str__()
     cmd = "openstack image create %s --file %s --disk-format raw --public" % (image_name, image_file)
     call_assert(cmd, 0)

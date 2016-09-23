@@ -53,7 +53,6 @@ def raise_exp(resp, message=None):
 
 
 def check_resp(resp):
-    LOG.debug(resp)
     if not resp.ok():
         LOG.error(_LE(resp))
         raise_exp(resp, 'not ok')
@@ -65,7 +64,6 @@ def lichbd_get_proto():
 
 def __lichbd_get_cluster():
     _, resp = clusterm.list()
-    LOG.error(_LE(resp))
     if (len(resp.records) != 1):
         raise_exp(resp, "cluster not only")
 
