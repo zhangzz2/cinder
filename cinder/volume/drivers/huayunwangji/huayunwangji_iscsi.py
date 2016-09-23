@@ -98,13 +98,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         else:
             self.lichbd = lichbd_localcmd
 
-        host = getattr(self.configuration, 'huayunwangji_rest_host')
-        port = getattr(self.configuration, 'huayunwangji_rest_port')
-        self.lichbd.lichbd_init(host, port)
-        self.vip = self.lichbd.lichbd_get_vip()
-        # self.vip = "192.168.120.211"
-        self.port = self.lichbd.lichbd_get_port()
-        self.proto = self.lichbd.lichbd_get_proto()
+        self.rest_host = getattr(self.configuration, 'huayunwangji_rest_host')
+        self.rest_port = getattr(self.configuration, 'huayunwangji_rest_port')
+        self.lichbd.lichbd_init(self.rest_host, self.rest_port)
         LOG.info(_LI("huayunwangji_client use rest"))
 
     def _update_volume_stats(self):
@@ -112,7 +108,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         data["volume_backend_name"] = "huayunwangji"
         data["vendor_name"] = 'huayunwangji'
         data["driver_version"] = self.VERSION
-        data["storage_protocol"] = self.proto
+        data["storage_protocol"] = self.lichbd.lichbd_get_proto()
         total = self.lichbd.lichbd_get_capacity()
         used = self.lichbd.lichbd_get_used()
         data['total_capacity_gb'] = total
@@ -123,13 +119,13 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         self._stats = data
 
     def check_for_setup_error(self):
-        if not netutils.is_valid_ip(self.vip):
-            msg = _('vip error: %s' % (self.vip))
+        if not netutils.is_valid_ip(self.rest_host):
+            msg = _('vip error: %s' % (self.rest_host))
             LOG.error(_LE(msg))
             raise exception.VolumeBackendAPIException(data=msg)
 
-        if not netutils.is_valid_port(self.port):
-            msg = _('port error' % (self.port))
+        if not netutils.is_valid_port(self.rest_port):
+            msg = _('port error' % (self.rest_port))
             LOG.error(_LE(msg))
             raise exception.VolumeBackendAPIException(data=msg)
 
@@ -452,7 +448,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         # self.create_volume(volume)
 
         iqn = self._get_iqn(self._get_volume(volume))
-        location = "%s:%s %s %s" % (self.vip, self.port, iqn, 0)
+        location = "%s:%s %s %s" % (self.lichbd.lichbd_get_vip(),
+                                    self.lichbd.lichbd_get_port(), iqn, 0)
         return {'provider_location': location,
                 'provider_auth': None, }
 
@@ -616,7 +613,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         data["target_discovered"] = False
         data["target_iqn"] = self._get_iqn(self._get_volume(volume))
         # data['target_lun'] = 0
-        data["target_portal"] = "%s:%s" % (self.vip, self.port)
+        data["target_portal"] = "%s:%s" % (self.lichbd.lichbd_get_vip(),
+                                           self.lichbd.lichbd_get_port())
         data["volume_id"] = volume['id']
         data["discard"] = False
 
