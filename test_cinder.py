@@ -6,7 +6,10 @@ import uuid
 
 from cinder.volume.drivers.huayunwangji.lichbd_localcmd import call_try, raise_exp
 
-def call_assert(cmd, return_code = None):
+def call_assert(cmd, return_code = None, p=True):
+    if p:
+        print 'call', cmd
+
     shellcmd = call_try(cmd, try_num=1)
     if return_code is not None:
         if (shellcmd.return_code != return_code):
@@ -14,6 +17,7 @@ def call_assert(cmd, return_code = None):
             print shellcmd.stdout
             print shellcmd.stderr
             raise_exp(shellcmd)
+
     return shellcmd
 
 def test_get_id(name):
@@ -22,7 +26,7 @@ def test_get_id(name):
     return shellcmd.stdout.strip() 
 
 def test_get_snap_id(volume_id, name):
-    cmd = "cinder snap-list | grep %s |grep %s|awk '{print $2}'" % (volume_id, name)
+    cmd = "cinder snapshot-list | grep %s |grep %s|awk '{print $2}'" % (volume_id, name)
     shellcmd = call_assert(cmd, 0)
     return shellcmd.stdout.strip() 
 
@@ -30,6 +34,17 @@ def test_get_image_id(name):
     cmd = "openstack image list | grep %s|awk '{print $2}'" % (name)
     shellcmd = call_assert(cmd, 0)
     return shellcmd.stdout.strip()
+
+def test_wait_snapshot_available(name):
+    while True:
+        cmd = "cinder snapshot-list | grep %s|awk '{print $6}'" % (name)
+        shellcmd = call_assert(cmd, 0)
+        status = shellcmd.stdout.strip()
+        if status == 'available':
+            break
+        else:
+            print 'wait %s active, now: %s' % (name, status)
+        time.sleep(3)
 
 def test_wait_volume_available(name):
     while True:
@@ -61,22 +76,19 @@ def test_volume_2():
     size = 1
     cmd = "cinder create --name %s %s" % (volume_name, size)
     call_assert(cmd, 0)
+    test_wait_volume_available(volume_name)
 
     volume_id = test_get_id(volume_name)
 
     # ==============
     print 'upload volume to image'
 
-    test_wait_volume_available(volume_name)
     image_name = 'image_upload_from_' + volume_name
     cmd = 'cinder upload-to-image %s %s' % (volume_id, image_name)
     call_assert(cmd, 0)
+    test_wait_image_active(image_name)
 
     image_id = test_get_image_id(image_name)
-
-    # ==============
-    print 'wait'
-    test_wait_image_active(image_name)
 
     # ==============
     print 'delete volume'
@@ -99,12 +111,13 @@ def test_volume_1():
     image_file = '/root/fake_tmp_image'
     for i in range(10):
         cmd = "echo %s > %s" % ('test'*1024, image_file)
-        call_assert(cmd, 0)
+        call_assert(cmd, 0, p=False)
 
     print 'create image'
     image_name = "test_image" + uuid.uuid4().__str__()
     cmd = "openstack image create %s --file %s --disk-format raw --public" % (image_name, image_file)
     call_assert(cmd, 0)
+    test_wait_image_active(image_name)
 
     image_id = test_get_image_id(image_name)
 
@@ -115,6 +128,7 @@ def test_volume_1():
     size = 1
     cmd = "cinder create --name %s %s" % (volume_name, size)
     call_assert(cmd, 0)
+    test_wait_volume_available(volume_name)
 
     volume_id = test_get_id(volume_name)
 
@@ -128,17 +142,19 @@ def test_volume_1():
     # ==============
     print 'create snap'
 
-    snap_name = "snap1"
-    cmd = "cinder snapshot_create --name %s %s" % (snap_name, volume_id)
+    snap_name = "snap1" + uuid.uuid4().__str__()
+    cmd = "cinder snapshot-create --name %s %s" % (snap_name, volume_id)
     call_assert(cmd, 0)
+    test_wait_snapshot_available(snap_name)
     snap_id = test_get_snap_id(volume_id, snap_name)
 
     # ==============
     print 'create from snap'
 
     volume_name_from_snap = volume_name + 'clone'
-    cmd = "cinder create %s  --snapshot-id %s %s" % (volume_name_from_snap, snap_id, size)
+    cmd = "cinder create --name %s  --snapshot-id %s %s" % (volume_name_from_snap, snap_id, new_size)
     call_assert(cmd, 0)
+    test_wait_volume_available(volume_name_from_snap)
 
     volume_name_from_snap_id = test_get_id(volume_name_from_snap)
 
@@ -146,8 +162,9 @@ def test_volume_1():
     print 'create from image'
 
     volume_name_from_image = volume_name + 'image'
-    cmd = "cinder create %s  --image-id %s %s" % (volume_name_from_image, image_id, size)
+    cmd = "cinder create --name %s  --image-id %s %s" % (volume_name_from_image, image_id, new_size)
     call_assert(cmd, 0)
+    test_wait_volume_available(volume_name_from_image)
 
     volume_name_from_image_id = test_get_id(volume_name_from_image)
 
@@ -155,8 +172,9 @@ def test_volume_1():
     print 'create from volume'
 
     volume_name_from_volume = volume_name + 'volume'
-    cmd = "cinder create %s  --source-volid %s %s" % (volume_name_from_volume, volume_id, size)
+    cmd = "cinder create --name %s  --source-volid %s %s" % (volume_name_from_volume, volume_id, new_size)
     call_assert(cmd, 0)
+    test_wait_volume_available(volume_name_from_volume)
 
     volume_name_from_volume_id = test_get_id(volume_name_from_volume)
 

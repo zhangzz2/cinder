@@ -80,7 +80,7 @@ def lichbd_get_iqn():
 
 def lichbd_get_vip():
     cluster = __lichbd_get_cluster()
-    return cluster["config_dict"]["iscsi.vip"]
+    return cluster["vip"]
 
 
 def lichbd_get_port():
