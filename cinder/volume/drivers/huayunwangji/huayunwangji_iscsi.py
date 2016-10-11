@@ -114,7 +114,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         data['total_capacity_gb'] = total
         data['free_capacity_gb'] = total - used
         data['reserved_percentage'] = 1
-        data['consistencygroup_support'] = True
+        data['consistencygroup_support'] = False
         data['multiattach'] = True
         self._stats = data
 
