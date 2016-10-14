@@ -67,10 +67,19 @@ huayunwangji_iscsi_opts = [
                 help='Flatten volumes created from snapshots to remove '
                      'dependency from volume to snapshot'),
     cfg.IntOpt('huayunwangji_max_clone_depth',
-               default=5,
+               default=1,
                help='Maximum number of nested volume clones that are '
                     'taken before a flatten occurs. Set to 0 to disable '
                     'cloning.'),
+    cfg.StrOpt('huayunwangji_auth_method',
+               # default='CHAP', help='auth method'),
+               default='', help='auth method'),
+    cfg.StrOpt('huayunwangji_auth_username',
+               # default='cinder', help='auth username'),
+               default='', help='auth username'),
+    cfg.StrOpt('huayunwangji_auth_password',
+               # default='cindermdsmds', help='auth username'),
+               default='', help='auth username'),
 ]
 
 CONF = cfg.CONF
@@ -187,10 +196,13 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def _check_max_clone_depth(self, src_volume):
         depth = self._get_clone_depth(src_volume)
         if depth == self.configuration.huayunwangji_max_clone_depth:
+            raise exception.NotSupportedOperation(
+                operation=_("clone depth more than 1, not support flatten"))
+
             LOG.debug("maximum clone depth (%d) has been reached - "
                       "flattening source volume",
                       self.configuration.huayunwangji_max_clone_depth)
-            self.lichbd.lichbd_flatten(src_volume)
+            self.lichbd.lichbd_volume_flatten(src_volume)
 
     def create_volume(self, volume):
         LOG.debug("zz2 volume: %s volume.size %s" % (volume.name, volume.size))
@@ -199,7 +211,6 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         LOG.debug("zz2 availableiliyt_zone %s" % (volume.availability_zone))
 
         # time.sleep(100)
-        # raise NotImplementedError("")
         volume_type = self._get_volume_type(volume)
         if volume_type:
             LOG.debug("zz2 volume_type %s" % (volume_type))
@@ -234,7 +245,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         # Do full copy if requested
         if self.configuration.huayunwangji_max_clone_depth <= 0:
-            self.lichbd_volume_copy(src_volume, target_volume)
+            self.lichbd.lichbd_volume_copy(src_volume, target_volume)
             return
 
         self._check_max_clone_depth(src_volume)
@@ -618,6 +629,11 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         data["volume_id"] = volume['id']
         data["discard"] = False
 
+        if self.configuration.huayunwangji_auth_method:
+            data['auth_method'] = self.configuration.huayunwangji_auth_method
+            data['auth_username'] = self.configuration.huayunwangji_auth_username
+            data['auth_password'] = self.configuration.huayunwangji_auth_password
+
         return {'driver_volume_type': 'iscsi', 'data': data}
 
         """
@@ -677,6 +693,22 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         iscsi_command = ('--op', 'new', '--interface', 'default')
         self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+        if self.configuration.huayunwangji_auth_method:
+            iscsi_command = ('--op', 'update',
+                         '-n', 'node.session.auth.authmethod',
+                         '-v', iscsi_properties["auth_method"])
+            self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+            iscsi_command = ('--op', 'update',
+                         '-n', 'node.session.auth.username',
+                         '-v', iscsi_properties["auth_username"])
+            self._run_iscsiadm(iscsi_properties, iscsi_command)
+
+            iscsi_command = ('--op', 'update',
+                         '-n', 'node.session.auth.password',
+                         '-v', iscsi_properties["auth_password"])
+            self._run_iscsiadm(iscsi_properties, iscsi_command)
 
         retry_max = 30
         find = False

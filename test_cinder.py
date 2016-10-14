@@ -138,6 +138,7 @@ def test_volume_1():
     new_size = 2
     cmd = "cinder extend %s %s" % (volume_id, new_size)
     call_assert(cmd, 0)
+    test_wait_volume_available(volume_name)
 
     # ==============
     print 'create snap'

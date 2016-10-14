@@ -151,6 +151,7 @@ def lichbd_volume_rename(dist, src):
 
 
 def lichbd_volume_flatten(path):
+    raise Exception("unsupport")
     _, resp = volumem.flatten(path, protocol='iscsi')
     check_resp(resp)
 

@@ -7,21 +7,19 @@ from fusionstor import ClusterManager, HostManager, PoolManager, \
         VolumeManager, SnapshotManager, config
 
 print 'ump_init'
-config.init_ump("192.168.251.33")
+config.init_ump("192.168.120.214")
 clusterm = ClusterManager()
 hostm = HostManager()     
 poolm = PoolManager()
 volumem =  VolumeManager()
 snapshotm = SnapshotManager()
 
-if __name__ == "__main__":
-    print 'xxx <pool_name>'
-    import sys
+def check_resp(resp, return_code):
+    print resp.status_code, return_code
+    if resp.status_code != return_code:
+        raise Exception("fuck")
 
-
-    # pool test
-    pool_name = sys.argv[1]
-
+def test_base(pool_name):
     _, resp = clusterm.list()
     print 'zz2---cluster --list---', resp
     cluster = resp.records[0]
@@ -37,75 +35,140 @@ if __name__ == "__main__":
 
     _, resp = poolm.create(pool_name, protocol='iscsi')
     print 'zz2---create---', resp
+    check_resp(resp, 200)
 
     _, resp = poolm.stat(pool_name, protocol='iscsi')
     print 'zz2---stat---', resp
+    check_resp(resp, 200)
 
     _, resp = poolm.delete(pool_name, protocol='iscsi')
     print 'zz2---delete---', resp
+    check_resp(resp, 200)
 
     # volume test
     _, resp = poolm.create(pool_name, protocol='iscsi')
     print 'zz2---create---', resp
+    check_resp(resp, 200)
 
-    size = "%sB" % (1*1024*1024*1024)
-    vol_name = '%s/volume_of_%s' % (pool_name, pool_name)
+    size = "%s" % (1*1024*1024*1024)
+    vol_name = '%s/volume-of-%s' % (pool_name, pool_name)
+    check_resp(resp, 200)
 
-    _, resp = volumem.create(vol_name, 1, provisioning='thin', protocol='iscsi')
+    _, resp = volumem.create(vol_name, size, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-create---', resp
+    check_resp(resp, 200)
 
     _, resp = volumem.stat(vol_name)
     print 'zz2---volume-stat---', resp
-    raise Exception("fuck")
+    check_resp(resp, 200)
 
     _, resp = volumem.stat(vol_name + "xxx")
     print 'zz2---404---volume-stat---', resp
+    check_resp(resp, 404)
 
-    newsize = "%sB" % (2*1024*1024*1024)
-    _, resp = volumem.resize(vol_name, 2, provisioning='thin', protocol='iscsi')
+    newsize = "%s" % (2*1024*1024*1024)
+    _, resp = volumem.resize(vol_name, newsize, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-resize---', resp
+    check_resp(resp, 200)
 
     _, resp = volumem.delete(vol_name, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-delete---', resp
+    check_resp(resp, 200)
 
     # snap test
-    size = "%sB" % (1*1024*1024*1024)
-    vol_name = '%s/volume_of_%s_for_snap' % (pool_name, pool_name)
-    _, resp = volumem.create(vol_name, 1, provisioning='thin', protocol='iscsi')
+    size = "%s" % (1*1024*1024*1024)
+    vol_name = '%s/volume-of-%s-for-snap' % (pool_name, pool_name)
+    _, resp = volumem.create(vol_name, size, provisioning='thin', protocol='iscsi')
     print 'zz2---volume-create---', resp
+    check_resp(resp, 200)
 
-    snap_path = "%s@%s"% (vol_name, 'snap1')
+    snap_name = "snap1"
+    snap_path = "%s@%s"% (vol_name, snap_name)
     _, resp = snapshotm.create(snap_path,  protocol='iscsi')
     print 'zz2---snap-create---', resp
+    check_resp(resp, 200)
 
     _, resp = volumem.list_snapshots(vol_name, protocol='iscsi')
     print 'zz2---snap-list---', resp
     print 'zz2---snap-list---', resp.records
-
-    _, resp = volumem.list_snapshots(vol_name, protocol='iscsi')
-    print 'zz2---snap-list---', resp
-    print 'zz2---snap-list---', resp.records
-
-    vol_name_2 = vol_name + "clone"
-    _, resp = snapshotm.clone(snap_path, vol_name_2, protocol='iscsi')
-
-    _, resp = volumem.stat(vol_name_2)
-    print 'zz2---volume-stat---', resp
-    raise Exception('fuck')
+    check_resp(resp, 200)
 
     _, resp = snapshotm.stat(snap_path,  protocol='iscsi')
     print 'zz2---snap-stat--', resp
+    check_resp(resp, 200)
 
-    vol_name_clone = '%s/volume_of_%s_for_snap_clone' % (pool_name, pool_name)
-    _, resp = snapshotm.clone(vol_name, snap_name,  protocol='iscsi')
-    print 'zz2---snap-stat--', resp
+    _, resp = snapshotm.protect(snap_path,  protocol='iscsi')
+    print 'zz2---snap-clone--', resp
+    check_resp(resp, 200)
+
+    vol_name_clone = '%s/volume-of-%s-for-snap-clone' % (pool_name, pool_name)
+    _, resp = snapshotm.clone(snap_path, vol_name_clone,  protocol='iscsi')
+    print 'zz2---snap-clone--', resp
+    check_resp(resp, 200)
+
+    snap_name_2 = "snap2"
+    snap_path_2 = "%s@%s"% (vol_name_clone, snap_name_2)
+    _, resp = snapshotm.create(snap_path_2,  protocol='iscsi')
+    print 'zz2---snap-create-2--', resp
+    check_resp(resp, 500)
+
+    vol_name_clone_2 = '%s/volume-of-%s-for-snap-clone-2' % (pool_name, pool_name)
+    _, resp = snapshotm.clone(snap_path_2, vol_name_clone_2,  protocol='iscsi')
+    print 'zz2---snap-clone-2--', resp
+    check_resp(resp, 404)
 
     # snap_name 是不是可以取消
-    _, resp = snapshotm.flatten(vol_name_clone, snap_name,  protocol='iscsi')
-    print 'zz2---snap-stat--', resp
+    # 先不支持flatten
+    # _, resp = snapshotm.flatten(vol_name_clone, snap_path,  protocol='iscsi')
+    # print 'zz2---snap-stat--', resp
 
-    _, resp = snapshotm.delete(vol_name, snap_name,  protocol='iscsi')
+    _, resp = volumem.delete(vol_name_clone_2, provisioning='thin', protocol='iscsi')
+    print 'zz2---volume-delete---', resp
+    check_resp(resp, 404)
+
+    _, resp = snapshotm.delete(snap_path_2,  protocol='iscsi')
     print 'zz2---snap-stat--', resp
+    check_resp(resp, 404)
+
+    _, resp = volumem.delete(vol_name_clone, provisioning='thin', protocol='iscsi')
+    print 'zz2---volume-delete---', resp
+    check_resp(resp, 200)
+
+    _, resp = snapshotm.protect(snap_path, is_protect=False, protocol='iscsi')
+    print 'zz2---snap-clone--', resp
+    check_resp(resp, 200)
+
+    _, resp = snapshotm.delete(snap_path,  protocol='iscsi')
+    print 'zz2---snap-stat--', resp
+    check_resp(resp, 200)
+
+def test_create(pool_name, total):
+    _, resp = poolm.create(pool_name, protocol='iscsi')
+    print 'zz2---create---', resp
+    check_resp(resp, 200)
+
+    for i in range(1, total):
+        size = "%s" % (1*1024*1024*1024)
+        vol_name = '%s/volume-of-%s-%s' % (pool_name, pool_name, i)
+
+        _, resp = volumem.create(vol_name, size, provisioning='thin', protocol='iscsi')
+        print 'zz2---volume-create---', resp
+        check_resp(resp, 200)
+
+        _, resp = volumem.delete(vol_name, protocol='iscsi')
+        print 'zz2---volume-delete---', resp
+        check_resp(resp, 200)
+
+
+if __name__ == "__main__":
+    print 'xxx <pool_name>'
+    import sys
+
+    # pool test
+    pool_name = sys.argv[1]
+    # test_base(pool_name)
+    test_create(pool_name+"2", 20)
+
 
 """
 cluster:
