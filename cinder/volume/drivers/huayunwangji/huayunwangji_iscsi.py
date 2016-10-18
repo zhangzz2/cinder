@@ -419,6 +419,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         parent = None
         parent_snap = None
 
+        if not self.lichbd.lichbd_volume_exist(path):
+            return True
+
         # # Ensure any backup snapshots are deleted
         # self._delete_backup_snaps(path)
 
@@ -572,6 +575,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         LOG.debug("snapshot snap_name: %s" % (snapshot.name))
 
         snap_path = self._get_snap_path(snapshot)
+        if not self.lichbd.lichbd_snap_exist(snap_path):
+            return True
+
         self.lichbd.lichbd_snap_delete(snap_path)
 
     def migrate_volume(self, context, volume, host):
