@@ -438,6 +438,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         # self._delete_backup_snaps(path)
 
         snaps = self.lichbd.lichbd_snap_list(path)
+        snaps = [x.split("@")[-1] for x in snaps]
+        LOG.debug("snaps of %s: %s" % (path, snaps))
         for s in snaps:
             if s.startswith('snapforclone-'):
                 used_clone = True
