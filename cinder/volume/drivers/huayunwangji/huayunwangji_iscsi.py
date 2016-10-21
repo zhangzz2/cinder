@@ -250,7 +250,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         self._check_max_clone_depth(src_volume)
 
-        snapshot_id = "snapforclone-%s" % (uuid.uuid4().__str__())
+        snapshot_id = "%s%s" % ('snapforclone-', uuid.uuid4().__str__())
         snapshot = "%s@%s" % (src_volume, snapshot_id)
         self.lichbd.lichbd_snap_create(snapshot)
         self.lichbd.lichbd_snap_protect(snapshot)
@@ -284,7 +284,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         if image_location:
             volume_id = image_location[0].split("//")[-1]
-            snapshot = "%s@%s" % (self._get_volume_by_id(volume_id), volume_id)
+            snapshot = "%s@%s%s" % (self._get_volume_by_id(volume_id),
+                                    'snapforclone-', volume_id)
             if not self.lichbd.lichbd_snap_exist(snapshot):
                 self.lichbd.lichbd_snap_create(snapshot)
 
@@ -400,9 +401,20 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         target = self._get_volume(volume)
         self.lichbd.lichbd_volume_resize(target, new_size)
 
+    def _is_snap_of_clone_image(self, parent, parent_snap):
+        volume_id = parent.split("/")[-1].strip(".deleted")
+        snap = parent_snap.split('@')[-1].strip("snapforclone-")
+        return volume_id == snap
+
     def _delete_clone_parent_refs(self, path, src_snap):
-        self.lichbd.lichbd_snap_unprotect(src_snap)
-        self.lichbd.lichbd_snap_delete(src_snap)
+        if self._is_snap_of_clone_image(path, src_snap):
+            try:
+                self.lichbd.lichbd_snap_delete(src_snap)
+            except Exception, e:
+                return None
+        else:
+            self.lichbd.lichbd_snap_unprotect(src_snap)
+            self.lichbd.lichbd_snap_delete(src_snap)
 
         has_snaps = bool(self.lichbd.lichbd_snap_list(path))
         if (not has_snaps) and path.endswith(".deleted"):
