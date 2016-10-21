@@ -144,10 +144,9 @@ def lichbd_volume_delete(path):
     check_resp(resp)
 
 
-def lichbd_volume_rename(dist, src):
-    raise Exception("unsupport")
-    # _, resp = volumem.rename(name, protocol='iscsi')
-    # check_resp(resp)
+def lichbd_volume_rename(src, dist):
+    _, resp = volumem.rename(src, dist, protocol='iscsi')
+    check_resp(resp)
 
 
 def lichbd_volume_flatten(path):

@@ -224,7 +224,7 @@ def lichbd_volume_delete(path):
             raise_exp(shellcmd)
 
 
-def lichbd_volume_rename(dist, src):
+def lichbd_volume_rename(src, dist):
     proto = lichbd_get_proto()
     cmd = 'lichbd mv %s %s -p %s 2>/dev/null' % (src, dist, proto)
     shellcmd = call_try(cmd)

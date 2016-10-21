@@ -891,6 +891,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
     def accept_transfer(self, context, volume, new_user, new_project):
         """Accept the transfer of a volume for a new user/project."""
+        raise exception.NotSupportedOperation(
+                operation=_("accept transfer, rename not support"))
+
         src_path = self._get_volume(volume)
 
         volume.user_id = new_user
