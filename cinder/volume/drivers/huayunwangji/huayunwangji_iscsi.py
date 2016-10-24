@@ -402,8 +402,14 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         self.lichbd.lichbd_volume_resize(target, new_size)
 
     def _is_snap_of_clone_image(self, parent, parent_snap):
-        volume_id = parent.split("/")[-1].strip(".deleted")
-        snap = parent_snap.split('@')[-1].strip("snapforclone-")
+        volume_id = parent.split("/")[-1]
+        if volume_id.endswith('.deleted'):
+            volume_id = volume_id[:-len('.deleted')]
+
+        snap = parent_snap.split('@')[-1]
+        if snap.startswith("snapforclone-"):
+            snap = snap[len("snapforclone-"):]
+
         return volume_id == snap
 
     def _delete_clone_parent_refs(self, path, src_snap):
