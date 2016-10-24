@@ -145,7 +145,7 @@ def lichbd_volume_delete(path):
 
 
 def lichbd_volume_rename(src, dist):
-    _, resp = volumem.rename(src, dist, protocol='iscsi')
+    _, resp = volumem.rename(src, path2=dist, protocol='iscsi')
     check_resp(resp)
 
 
