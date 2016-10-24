@@ -407,6 +407,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         return volume_id == snap
 
     def _delete_clone_parent_refs(self, path, src_snap):
+        LOG.debug("parent: %s, snap: %s" % (path, src_snap))
+
         if self._is_snap_of_clone_image(path, src_snap):
             try:
                 self.lichbd.lichbd_snap_delete(src_snap)
