@@ -45,7 +45,7 @@ from cinder.objects import fields
 from cinder.image import image_utils
 from cinder import utils
 from cinder.volume import driver
-from cinder.volume.drivers.huayunwangji import lichbd_localcmd
+# from cinder.volume.drivers.huayunwangji import lichbd_localcmd
 from cinder.volume.drivers.huayunwangji import lichbd_rest
 from cinder.volume.drivers.huayunwangji.lichbd_common import LichbdError
 
@@ -101,15 +101,17 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def __init__(self, *args, **kwargs):
         super(HuayunwangjiISCSIDriver, self).__init__(*args, **kwargs)
         self.configuration.append_config_values(huayunwangji_iscsi_opts)
-
-        if (getattr(self.configuration, 'huayunwangji_client') == 'rest'):
-            self.lichbd = lichbd_rest
-        else:
-            self.lichbd = lichbd_localcmd
+        self.lichbd = lichbd_rest
+        # if (getattr(self.configuration, 'huayunwangji_client') == 'rest'):
+        #     self.lichbd = lichbd_rest
+        # else:
+        #     self.lichbd = lichbd_localcmd
 
         self.rest_host = getattr(self.configuration, 'huayunwangji_rest_host')
         self.rest_port = getattr(self.configuration, 'huayunwangji_rest_port')
-        self.lichbd.lichbd_init(self.rest_host, self.rest_port)
+        self.auth_name = getattr(self.configuration, 'huayunwangji_auth_username')
+        self.auth_password = getattr(self.configuration, 'huayunwangji_auth_password')
+        self.lichbd.lichbd_init(self.rest_host, self.rest_port, self.auth_name, self.auth_password)
         LOG.info(_LI("huayunwangji_client use rest"))
 
     def _update_volume_stats(self):

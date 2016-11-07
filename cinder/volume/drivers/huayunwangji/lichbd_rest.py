@@ -275,8 +275,8 @@ def lichbd_cgsnapshot_delete(group_name, snapshot_name):
     return None
 
 
-def lichbd_init(host, port):
-    fusionstor.config.init_ump(host, port)
+def lichbd_init(host, port, username, password):
+    fusionstor.config.init_ump(host, port, username, password)
 
     # LOG.error(_LE("%s %s" % (host, port)))
 
