@@ -124,7 +124,7 @@ def lichbd_pool_delete(path):
 
 
 def lichbd_volume_create(path, size):
-    size = int(size) * (1024 ** 3)
+    size = int(size)
     _, resp = volumem.create(path, size,
                              protocol='iscsi', provisioning='thin')
     check_resp(resp)
