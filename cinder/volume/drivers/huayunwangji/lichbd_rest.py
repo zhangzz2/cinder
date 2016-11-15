@@ -131,7 +131,7 @@ def lichbd_volume_create(path, size):
 
 
 def lichbd_volume_resize(path, size):
-    size = int(size) * (1024 ** 3)
+    size = int(size)
     _, resp = volumem.resize(path, size, protocol='iscsi')
     check_resp(resp)
 
