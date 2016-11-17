@@ -80,6 +80,10 @@ huayunwangji_iscsi_opts = [
     cfg.StrOpt('huayunwangji_auth_password',
                # default='cindermdsmds', help='auth username'),
                default='', help='auth username'),
+    cfg.StrOpt('huayunwangji_rest_username',
+               default='', help='fusionstor auth username'),
+    cfg.StrOpt('huayunwangji_rest_password',
+               default='', help='fusionstor auth username'),
 ]
 
 CONF = cfg.CONF
@@ -109,8 +113,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         self.rest_host = getattr(self.configuration, 'huayunwangji_rest_host')
         self.rest_port = getattr(self.configuration, 'huayunwangji_rest_port')
-        self.auth_name = getattr(self.configuration, 'huayunwangji_auth_username')
-        self.auth_password = getattr(self.configuration, 'huayunwangji_auth_password')
+        self.auth_name = getattr(self.configuration, 'huayunwangji_rest_username')
+        self.auth_password = getattr(self.configuration, 'huayunwangji_rest_password')
         self.lichbd.lichbd_init(self.rest_host, self.rest_port, self.auth_name, self.auth_password)
         LOG.info(_LI("huayunwangji_client use rest"))
 
