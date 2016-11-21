@@ -123,7 +123,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         data["volume_backend_name"] = "huayunwangji"
         data["vendor_name"] = 'huayunwangji'
         data["driver_version"] = self.VERSION
-        data["storage_protocol"] = self.lichbd.lichbd_get_proto()
+        data["storage_protocol"] = self.lichbd.lichbsnapd_get_proto()
         total = self.lichbd.lichbd_get_capacity()
         used = self.lichbd.lichbd_get_used()
         data['total_capacity_gb'] = total
@@ -605,8 +605,10 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         snap_path = self._get_snap_path(snapshot)
         if not self.lichbd.lichbd_snap_exist(snap_path):
             return True
-
-        self.lichbd.lichbd_snap_delete(snap_path)
+        try:
+            self.lichbd.lichbd_snap_delete(snap_path)
+        except LichbdError, e:
+            exception.VolumeBackendAPIException(data=e.message)
 
     def migrate_volume(self, context, volume, host):
         # http://docs.openstack.org/developer/cinder/devref/migration.html
