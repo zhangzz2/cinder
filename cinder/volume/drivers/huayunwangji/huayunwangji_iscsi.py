@@ -466,7 +466,10 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
             parent, parent_snap = self._get_source(path)
             self.lichbd.lichbd_volume_delete(path)
             if parent:
-                self._delete_clone_parent_refs(parent, parent_snap)
+                try:
+                    self._delete_clone_parent_refs(parent, parent_snap)
+                except LichbdError, e:
+                    exception.VolumeBackendAPIException(data=e.message)
 
     def retype(self, context, volume, new_type, diff, host):
         """Retypes a volume, allow Qos and extra_specs change."""
