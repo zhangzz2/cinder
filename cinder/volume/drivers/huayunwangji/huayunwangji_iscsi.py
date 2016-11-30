@@ -123,7 +123,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         data["volume_backend_name"] = "huayunwangji"
         data["vendor_name"] = 'huayunwangji'
         data["driver_version"] = self.VERSION
-        data["storage_protocol"] = self.lichbd.lichbsnapd_get_proto()
+        data["storage_protocol"] = self.lichbd.lichbd_get_proto()
         total = self.lichbd.lichbd_get_capacity()
         used = self.lichbd.lichbd_get_used()
         data['total_capacity_gb'] = total
