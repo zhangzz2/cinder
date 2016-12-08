@@ -1,4 +1,4 @@
-# Copyright 2015 IBM Corp.
+# Copyright 2016 Huayunwangji Corp.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -824,8 +824,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         return (None, None)
 
     def create_consistencygroup(self, context, group):
-        """Creates a consistencygroup."""
-        LOG.debug("group: %s" % (group))
+        """Creates a consistencygroup.
+        """
+        LOG.debug("create group: %s" % group)
         self.lichbd.lichbd_cg_create(group['id'])
         return {'status': fields.ConsistencyGroupStatus.AVAILABLE}
 
@@ -846,6 +847,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         :param remove_volumes: a list of volume dictionaries to be removed.
         :returns: model_update, add_volumes_update, remove_volumes_update
         """
+
         add_volumes = add_volumes if add_volumes else []
         remove_volumes = remove_volumes if remove_volumes else []
 

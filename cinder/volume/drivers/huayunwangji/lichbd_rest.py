@@ -1,4 +1,4 @@
-# Copyright 2015 IBM Corp.
+# Copyright 2016 Huayunwangji Corp.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -36,6 +36,8 @@ hostm = None
 poolm = None
 volumem = None
 snapshotm = None
+cgsnapshotm = None
+consistencygroupm = None
 
 
 def raise_exp(resp, message=None):
@@ -238,41 +240,37 @@ def lichbd_snap_unprotect(snap_path):
 
 
 def lichbd_cg_create(group_name):
-    raise Exception("unsupport")
-    pass
-
+    _, resp = consistencygroupm.create(group_name, protocol='iscsi')
+    check_resp(resp)
 
 def lichbd_cg_delete(group_name):
-    raise Exception("unsupport")
-    pass
-
+    _, resp = consistencygroupm.delete(group_name, protocol='iscsi')
+    check_resp(resp)
 
 def lichbd_cg_add_volume(group_name, volumes):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
-    raise Exception("unsupport")
-    pass
-
+    _, resp = consistencygroupm.add(group_name, volumes, protocol='iscsi')
+    check_resp(resp)
 
 def lichbd_cg_remove_volume(group_name, volumes):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
-    raise Exception("unsupport")
-    return None
+    _, resp = consistencygroupm.remove(group_name, volumes, protocol='iscsi')
+    check_resp(resp)
 
 
 def lichbd_cgsnapshot_create(group_name, snapshot_name):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
-    raise Exception("unsupport")
-    return None
+    _, resp = cgsnapshotm.create(group_name, snapshot_name, protocol='iscsi')
+    check_resp(resp)
 
-
-def lichbd_cgsnapshot_delete(group_name, snapshot_name):
+def lichbd_cgsnapshot_delete(cgsnapshot_name):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
-    raise Exception("unsupport")
-    return None
+    _, resp = cgsnapshotm.delete(cgsnapshot_name, protocol='iscsi')
+    check_resp(resp)
 
 
 def lichbd_init(host, port, username, password):
@@ -285,9 +283,13 @@ def lichbd_init(host, port, username, password):
     global poolm
     global volumem
     global snapshotm
+    global consistencygroupm
+    global cgsnapshotm
 
     clusterm = fusionstor.ClusterManager()
     hostm = fusionstor.HostManager()
     poolm = fusionstor.PoolManager()
     volumem = fusionstor.VolumeManager()
     snapshotm = fusionstor.SnapshotManager()
+    consistencygroupm = fusionstor.VGroupManager()
+    cgsnapshotm = fusionstor.CGSnapshotManager()
