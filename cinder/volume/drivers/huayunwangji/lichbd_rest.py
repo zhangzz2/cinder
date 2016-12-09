@@ -266,6 +266,7 @@ def lichbd_cgsnapshot_create(group_name, snapshot_name):
     _, resp = cgsnapshotm.create(group_name, snapshot_name, protocol='iscsi')
     check_resp(resp)
 
+
 def lichbd_cgsnapshot_delete(cgsnapshot_name):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''

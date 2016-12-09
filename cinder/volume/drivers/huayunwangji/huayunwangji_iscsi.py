@@ -820,7 +820,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         group_name = cgsnapshot['consistencygroup_id']
         snapshot_name = self._get_cgsnap_name(cgsnapshot)
-        self.lichbd.lichbd_cgsnapshot_delete(group_name, snapshot_name)
+        self.lichbd.lichbd_cgsnapshot_delete(snapshot_name)
         return (None, None)
 
     def create_consistencygroup(self, context, group):
