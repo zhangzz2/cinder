@@ -267,11 +267,22 @@ def lichbd_cgsnapshot_create(group_name, snapshot_name):
     check_resp(resp)
 
 
-def lichbd_cgsnapshot_delete(cgsnapshot_name):
+def lichbd_cgsnapshot_delete(group_name, cgsnapshot_name):
     '''volumes = [pool2/volume2, pool3/v, ...]
     '''
-    _, resp = cgsnapshotm.delete(cgsnapshot_name, protocol='iscsi')
+    _, resp = cgsnapshotm.delete(group_name, cgsnapshot_name, protocol='iscsi')
     check_resp(resp)
+
+
+def lichbd_cgsnapshot_list(group_name):
+    _, resp = consistencygroupm.list_cgsnapshots(group_name, protocol='iscsi')
+    check_resp(resp)
+
+    cgsnaps = []
+    for cgsnap in resp.records:
+        cgsnaps.append("%s" % cgsnap["name"])
+
+    return cgsnaps
 
 
 def lichbd_init(host, port, username, password):

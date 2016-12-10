@@ -820,7 +820,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         group_name = cgsnapshot['consistencygroup_id']
         snapshot_name = self._get_cgsnap_name(cgsnapshot)
-        self.lichbd.lichbd_cgsnapshot_delete(snapshot_name)
+        self.lichbd.lichbd_cgsnapshot_delete(group_name, snapshot_name)
         return (None, None)
 
     def create_consistencygroup(self, context, group):
@@ -833,9 +833,10 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def delete_consistencygroup(self, context, group, volumes):
         """Deletes a consistency group."""
         LOG.debug("group: %s, volume: %s" % (group, volumes))
-
-        self.lichbd.lichbd_cg_delete(group['id'])
-        return (None, None)
+        has_cgsnaps = bool(self.lichbd.lichbd_cgsnapshot_list(group['id']))
+        if not has_cgsnaps:
+            self.lichbd.lichbd_cg_delete(group['id'])
+            return (None, None)
 
     def update_consistencygroup(self, context, group,
                                 add_volumes=None, remove_volumes=None):
@@ -854,11 +855,12 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         add_volumes = [self._get_volume(x) for x in add_volumes]
         remove_volumes = [self._get_volume(x) for x in remove_volumes]
         group_name = group['id']
+        has_cgsnaps = bool(self.lichbd.lichbd_cgsnapshot_list(group['id']))
 
-        if add_volumes:
+        if not has_cgsnaps and add_volumes:
             self.lichbd.lichbd_cg_add_volume(group_name, add_volumes)
 
-        if remove_volumes:
+        if not has_cgsnaps and remove_volumes:
             self.lichbd.lichbd_cg_remove_volume(group_name, remove_volumes)
 
         return None, None, None
