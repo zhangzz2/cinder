@@ -165,10 +165,12 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         return volume_type
 
     def _get_volume(self, volume):
-        return '%s/%s' % (volume.user_id, volume.id)
+        return 'openstack/%s' % (volume.id)
+        # return '%s/%s' % (volume.user_id, volume.id)
 
     def _get_pool(self, volume):
-        return '%s' % (volume.user_id)
+        # return '%s' % (volume.user_id)
+        return 'openstack'
 
     def _get_volume_by_id(self, volume_id):
         ctx = context.get_admin_context()
@@ -176,6 +178,12 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         return self._get_volume(v)
 
     def _get_source(self, path):
+        """
+
+        :param path:
+        :return: parent is the form of 'pool/vol',
+                 parent_snap is the form of 'pool/vol@snap'
+        """
         parent = None
         parent_snap = None
 
@@ -214,7 +222,7 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         LOG.debug("zz2 volume: %s volume.size %s" % (volume.name, volume.size))
         LOG.debug("zz2 user_id %s" % (volume.user_id))
         LOG.debug("zz2 project_id %s" % (volume.project_id))
-        LOG.debug("zz2 availableiliyt_zone %s" % (volume.availability_zone))
+        LOG.debug("zz2 availability_zone %s" % (volume.availability_zone))
 
         # time.sleep(100)
         volume_type = self._get_volume_type(volume)
@@ -233,13 +241,20 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
         # if not self.lichbd.lichbd_volume_exist(path):
         self.lichbd.lichbd_volume_create(path, size)
 
-        if (volume.get('consistencygroup_id')):
+        if volume.get('consistencygroup_id'):
             group_name = volume['consistencygroup_id']
             self.lichbd.lichbd_cg_add_volume(group_name, [path])
 
         LOG.debug("creating volume '%s' size %s", volume.name, size)
 
     def create_cloned_volume(self, volume, src_vref):
+        """Create a cloned volume from volume.
+        first create a snapshot from source_volume,
+        then create a clone from that snapshot.
+        :param volume:
+        :param src_vref:
+        :return:
+        """
         LOG.debug("create cloned volume '%s' src_vref %s", volume, src_vref)
 
         target_pool = self._get_pool(volume)
@@ -289,7 +304,9 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
                   image_meta, image_service))
 
         if image_location:
+            # image_id is used as volume_id, to create a snapshot
             volume_id = image_location[0].split("//")[-1]
+            # 'openstack/volume_id@snapforclone-volume_id'
             snapshot = "%s@%s%s" % (self._get_volume_by_id(volume_id),
                                     'snapforclone-', volume_id)
             if not self.lichbd.lichbd_snap_exist(snapshot):
@@ -912,19 +929,19 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         return None, None
 
-    def accept_transfer(self, context, volume, new_user, new_project):
-        """Accept the transfer of a volume for a new user/project."""
-        raise exception.NotSupportedOperation(
-                operation=_("accept transfer, rename not support"))
-
-        src_path = self._get_volume(volume)
-
-        volume.user_id = new_user
-        volume.project_id = new_project
-        dst_pool = self._get_pool(volume)
-        dst_path = self._get_volume(volume)
-
-        if not self.lichbd.lichbd_pool_exist(dst_pool):
-            self.lichbd.lichbd_pool_creat(dst_pool)
-
-        self.lichbd.lichbd_volume_rename(src_path, dst_path)
+    # def accept_transfer(self, context, volume, new_user, new_project):
+    #     """Accept the transfer of a volume for a new user/project."""
+    #     raise exception.NotSupportedOperation(
+    #             operation=_("accept transfer, rename not support"))
+    #
+    #     src_path = self._get_volume(volume)
+    #
+    #     volume.user_id = new_user
+    #     volume.project_id = new_project
+    #     dst_pool = self._get_pool(volume)
+    #     dst_path = self._get_volume(volume)
+    #
+    #     if not self.lichbd.lichbd_pool_exist(dst_pool):
+    #         self.lichbd.lichbd_pool_creat(dst_pool)
+    #
+    #     self.lichbd.lichbd_volume_rename(src_path, dst_path)
