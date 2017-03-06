@@ -94,8 +94,8 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
                               driver.ExtendVD,
                               driver.CloneableImageVD, driver.SnapshotVD,
                               driver.MigrateVD, driver.BaseVD):
-    """huayunwangji fusionstor iSCSI volume driver.
 
+    """huayunwangji fusionstor iSCSI volume driver.
     Version history:
     1.0.0 - Initial driver
     """
@@ -296,33 +296,53 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def clone_image(self, context, volume,
                     image_location, image_meta,
                     image_service):
-        # 'image_location':
-        # (u'cinder://ea6544d0-9594-4598-8560-a5eb310626e5', None)
-        LOG.debug("clone image '%s', context: %s,image_location: %s, \
-                  image_meta: %s, image_service: %s" % (
-                  volume.name, context, image_location,
-                  image_meta, image_service))
-
         if image_location:
-            # image_id is used as volume_id, to create a snapshot
-            volume_id = image_location[0].split("//")[-1]
-            # 'openstack/volume_id@snapforclone-volume_id'
-            snapshot = "%s@%s%s" % (self._get_volume_by_id(volume_id),
-                                    'snapforclone-', volume_id)
-            if not self.lichbd.lichbd_snap_exist(snapshot):
-                self.lichbd.lichbd_snap_create(snapshot)
+            # TODO to support multi-type image location forms.
+            image_id = image_location[0].split("/")[-1]
 
-            pool = self._get_pool(volume)
-            if not self.lichbd.lichbd_pool_exist(pool):
-                self.lichbd.lichbd_pool_creat(pool)
-            target = self._get_volume(volume)
-            self.lichbd.lichbd_snap_clone(snapshot, target)
-
+            self.create_volume(volume)
+            self.copy_image_to_volume(context, volume, image_service, image_id)
             return {'provider_location': None}, True
 
         msg = "not support clone image without location"
         LOG.debug(msg)
-        return ({}, False)
+        return {}, False
+
+    # def clone_image(self, context, volume,
+    #                 image_location, image_meta,
+    #                 image_service):
+    #     # Create a volume efficiently from an existing image
+    #     # 'image_location':
+    #     # (u'cinder://ea6544d0-9594-4598-8560-a5eb310626e5', None)
+    #     # if set file to the glance default store, the form of image_location is
+    #     # file:///var/lib/glance/images/5be894a9-e20c-492f-a743-14178be14b58
+    #     # To support both cinder and file store,
+    #     #
+    #     LOG.debug("clone image '%s', context: %s,image_location: %s, \
+    #               image_meta: %s, image_service: %s" % (
+    #               volume.name, context, image_location,
+    #               image_meta, image_service))
+    #
+    #     if image_location:
+    #         # image_id is used as volume_id, to create a snapshot
+    #         volume_id = image_location[0].split("//")[-1]
+    #         # 'openstack/volume_id@snapforclone-volume_id'
+    #         snapshot = "%s@%s%s" % (self._get_volume_by_id(volume_id),
+    #                                 'snapforclone-', volume_id)
+    #         if not self.lichbd.lichbd_snap_exist(snapshot):
+    #             self.lichbd.lichbd_snap_create(snapshot)
+    #
+    #         pool = self._get_pool(volume)
+    #         if not self.lichbd.lichbd_pool_exist(pool):
+    #             self.lichbd.lichbd_pool_creat(pool)
+    #         target = self._get_volume(volume)
+    #         self.lichbd.lichbd_snap_clone(snapshot, target)
+    #
+    #         return {'provider_location': None}, True
+    #
+    #     msg = "not support clone image without location"
+    #     LOG.debug(msg)
+    #     return ({}, False)
 
     def _image_conversion_dir(self):
         tmpdir = CONF.image_conversion_dir
@@ -335,43 +355,43 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         return tmpdir
 
-    def _dd_copy(src_path, dst_path):
-        utils.execute("dd", "if=%s" % (src_path),
-                      "of=%s" % (dst_path), "oflag=direct")
-
-    def copy_image_to_volume(self, context, volume, image_service, image_id):
-        LOG.debug("copy_image_to_volume context %s" % (context))
-        LOG.debug("copy_image_to_volume volume %s" % (volume))
-        LOG.debug("copy_image_to_volume volume.size %s" % (volume.size))
-        LOG.debug("copy_image_to_volume image_service %s" % (image_service))
-        LOG.debug("copy_image_to_volume image_id %s" % (image_id))
-
-        tmp_dir = self._image_conversion_dir()
-
-        with tempfile.NamedTemporaryFile(dir=tmp_dir) as tmp:
-            image_utils.fetch_to_raw(context, image_service, image_id,
-                                     tmp.name,
-                                     self.configuration.volume_dd_blocksize,
-                                     size=volume.size)
-
-            size = math.ceil(float(utils.get_file_size(tmp.name)) / units.Gi)
-            src_path = tmp.name
-
-            self.create_volume(volume)
-            if (size > volume.size):
-                self.extend_volume(volume, size)
-
-            by_path = self._makesure_login(volume)
-            try:
-                self._dd_copy(src_path, by_path)
-            except Exception:
-                self._makesure_logout(volume)
-                raise
-
-        if (volume.get('consistencygroup_id')):
-            group_name = volume['consistencygroup_id']
-            path = self._get_volume(volume)
-            self.lichbd.lichbd_cg_add_volume(group_name, [path])
+    # def _dd_copy(src_path, dst_path):
+    #     utils.execute("dd", "if=%s" % (src_path),
+    #                   "of=%s" % (dst_path), "oflag=direct")
+    #
+    # def copy_image_to_volume(self, context, volume, image_service, image_id):
+    #     LOG.debug("copy_image_to_volume context %s" % (context))
+    #     LOG.debug("copy_image_to_volume volume %s" % (volume))
+    #     LOG.debug("copy_image_to_volume volume.size %s" % (volume.size))
+    #     LOG.debug("copy_image_to_volume image_service %s" % (image_service))
+    #     LOG.debug("copy_image_to_volume image_id %s" % (image_id))
+    #
+    #     tmp_dir = self._image_conversion_dir()
+    #
+    #     with tempfile.NamedTemporaryFile(dir=tmp_dir) as tmp:
+    #         image_utils.fetch_to_raw(context, image_service, image_id,
+    #                                  tmp.name,
+    #                                  self.configuration.volume_dd_blocksize,
+    #                                  size=volume.size)
+    #
+    #         size = math.ceil(float(utils.get_file_size(tmp.name)) / units.Gi)
+    #         src_path = tmp.name
+    #
+    #         self.create_volume(volume)
+    #         if (size > volume.size):
+    #             self.extend_volume(volume, size)
+    #
+    #         by_path = self._makesure_login(volume)
+    #         try:
+    #             self._dd_copy(src_path, by_path)
+    #         except Exception:
+    #             self._makesure_logout(volume)
+    #             raise
+    #
+    #     if (volume.get('consistencygroup_id')):
+    #         group_name = volume['consistencygroup_id']
+    #         path = self._get_volume(volume)
+    #         self.lichbd.lichbd_cg_add_volume(group_name, [path])
 
     def backup_volume(self, context, backup, backup_service):
         """Create a new backup from an existing volume."""
@@ -401,21 +421,21 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
 
         LOG.debug("volume restore complete. %s" % (by_path))
 
-    def copy_volume_to_image(self, context, volume, image_service, image_meta):
-        LOG.debug("copy_volume_to_image")
-        LOG.debug("copy_volume_to_image context %s" % (context))
-        LOG.debug("copy_volume_to_image volume %s" % (volume))
-        LOG.debug("copy_volume_to_image image_service %s" % (image_service))
-        LOG.debug("copy_volume_to_image image_meta %s" % (image_meta))
-
-        by_path = self._makesure_login(volume)
-        try:
-            image_utils.upload_volume(context,
-                                      image_service, image_meta, by_path)
-        except Exception:
-            raise
-        finally:
-            self._makesure_logout(volume)
+    # def copy_volume_to_image(self, context, volume, image_service, image_meta):
+    #     LOG.debug("copy_volume_to_image")
+    #     LOG.debug("copy_volume_to_image context %s" % (context))
+    #     LOG.debug("copy_volume_to_image volume %s" % (volume))
+    #     LOG.debug("copy_volume_to_image image_service %s" % (image_service))
+    #     LOG.debug("copy_volume_to_image image_meta %s" % (image_meta))
+    #
+    #     by_path = self._makesure_login(volume)
+    #     try:
+    #         image_utils.upload_volume(context,
+    #                                   image_service, image_meta, by_path)
+    #     except Exception:
+    #         raise
+    #     finally:
+    #         self._makesure_logout(volume)
 
     def extend_volume(self, volume, new_size):
         """Extend an existing volume."""
