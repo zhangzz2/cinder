@@ -296,53 +296,43 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
     def clone_image(self, context, volume,
                     image_location, image_meta,
                     image_service):
-        if image_location:
-            # TODO to support multi-type image location forms.
-            image_id = image_location[0].split("/")[-1]
+        # Create a volume efficiently from an existing image
+        # 'image_location':
+        # (u'cinder://ea6544d0-9594-4598-8560-a5eb310626e5', None)
+        # if set file to the glance default store, the form of image_location is
+        # file:///var/lib/glance/images/5be894a9-e20c-492f-a743-14178be14b58
+        # To support cinder, swift and file store.
+        LOG.debug("clone image '%s', context: %s,image_location: %s, \
+                  image_meta: %s, image_service: %s" % (
+                  volume.name, context, image_location,
+                  image_meta, image_service))
 
-            self.create_volume(volume)
-            self.copy_image_to_volume(context, volume, image_service, image_id)
-            return {'provider_location': None}, True
+        if image_location:
+            if image_location[0].startswith('cinder'):
+                # image_id is used as volume_id, to create a snapshot,
+                # 'openstack/volume_id@snapforclone-volume_id'
+                volume_id = image_location[0].split("//")[-1]
+                snapshot = "%s@%s%s" % (self._get_volume_by_id(volume_id),
+                                        'snapforclone-', volume_id)
+                if not self.lichbd.lichbd_snap_exist(snapshot):
+                    self.lichbd.lichbd_snap_create(snapshot)
+
+                pool = self._get_pool(volume)
+                if not self.lichbd.lichbd_pool_exist(pool):
+                    self.lichbd.lichbd_pool_creat(pool)
+                target = self._get_volume(volume)
+                self.lichbd.lichbd_snap_clone(snapshot, target)
+                return {'provider_location': None}, True
+
+            else:
+                image_id = image_location[0].split("/")[-1]
+                self.create_volume(volume)
+                self.copy_image_to_volume(context, volume, image_service, image_id)
+                return {'provider_location': None}, True
 
         msg = "not support clone image without location"
         LOG.debug(msg)
         return {}, False
-
-    # def clone_image(self, context, volume,
-    #                 image_location, image_meta,
-    #                 image_service):
-    #     # Create a volume efficiently from an existing image
-    #     # 'image_location':
-    #     # (u'cinder://ea6544d0-9594-4598-8560-a5eb310626e5', None)
-    #     # if set file to the glance default store, the form of image_location is
-    #     # file:///var/lib/glance/images/5be894a9-e20c-492f-a743-14178be14b58
-    #     # To support both cinder and file store,
-    #     #
-    #     LOG.debug("clone image '%s', context: %s,image_location: %s, \
-    #               image_meta: %s, image_service: %s" % (
-    #               volume.name, context, image_location,
-    #               image_meta, image_service))
-    #
-    #     if image_location:
-    #         # image_id is used as volume_id, to create a snapshot
-    #         volume_id = image_location[0].split("//")[-1]
-    #         # 'openstack/volume_id@snapforclone-volume_id'
-    #         snapshot = "%s@%s%s" % (self._get_volume_by_id(volume_id),
-    #                                 'snapforclone-', volume_id)
-    #         if not self.lichbd.lichbd_snap_exist(snapshot):
-    #             self.lichbd.lichbd_snap_create(snapshot)
-    #
-    #         pool = self._get_pool(volume)
-    #         if not self.lichbd.lichbd_pool_exist(pool):
-    #             self.lichbd.lichbd_pool_creat(pool)
-    #         target = self._get_volume(volume)
-    #         self.lichbd.lichbd_snap_clone(snapshot, target)
-    #
-    #         return {'provider_location': None}, True
-    #
-    #     msg = "not support clone image without location"
-    #     LOG.debug(msg)
-    #     return ({}, False)
 
     def _image_conversion_dir(self):
         tmpdir = CONF.image_conversion_dir
