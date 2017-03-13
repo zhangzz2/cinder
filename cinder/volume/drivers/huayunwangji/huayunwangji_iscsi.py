@@ -509,14 +509,12 @@ class HuayunwangjiISCSIDriver(driver.ConsistencyGroupVD, driver.TransferVD,
                   'required for volumes.', volume.id)
         return True
 
-    def create_export(self, context, volume, connector):
+    def create_export(self, context, volume):
         """Exports the volume."""
 
         LOG.debug("create export volume '%s'", volume.name)
         LOG.debug("volume: %s", volume)
         LOG.debug("context: %s", context)
-        LOG.debug("connector: %s", connector)
-
         # self.create_volume(volume)
 
         iqn = self._get_iqn(self._get_volume(volume))
